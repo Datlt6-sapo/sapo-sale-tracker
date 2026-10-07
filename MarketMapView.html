@@ -1,0 +1,492 @@
+<script>
+  // ---------- Bản đồ thị trường ----------
+  var marketMapMode = 'map';
+  var mmFilter = { province: '', status: '', currentSoftware: '', urgency: '', ownerEmail: '', search: '' };
+  var mmLeafletMap = null;
+
+  function ensureMmConfig() {
+    if (STATE.mmConfig) return Promise.resolve(STATE.mmConfig);
+    return callServer('getMarketMapConfig').then(function (cfg) { STATE.mmConfig = cfg; return cfg; });
+  }
+
+  function renderMarketMapView() {
+    marketMapMode = 'map';
+    mmFilter = { province: '', status: '', currentSoftware: '', urgency: '', ownerEmail: '', search: '' };
+    ensureMmConfig().then(loadMarketMap);
+  }
+
+  function loadMarketMap() {
+    var isLeader = STATE.user.role === 'LEADER';
+    var calls = [callServer('listOutlets', mmFilter)];
+    calls.push(isLeader ? callServer('listSaleMembers') : Promise.resolve([]));
+    Promise.all(calls).then(function (r) {
+      STATE.outletsCache = r[0];
+      paintMarketMap(r[1]);
+    });
+  }
+
+  function statusBadgeClass_(status) {
+    return status === 'Đã hợp tác' ? 'green' : (status === 'Đang khai thác' ? 'amber' : (status === 'Ngừng hợp tác' ? 'red' : 'gray'));
+  }
+
+  function urgencyBadge_(o) {
+    var label = o.daysLeft !== null
+      ? (o.daysLeft < 0 ? 'Đã hết hạn' : o.daysLeft + ' ngày còn lại')
+      : (o.contractEstimate || 'Không rõ');
+    return '<span class="badge ' + o.urgency + '">' + label + '</span>';
+  }
+
+  function paintMarketMap(members) {
+    var cfg = STATE.mmConfig;
+    var isLeader = STATE.user.role === 'LEADER';
+    var main = document.getElementById('mainContent');
+
+    var html = '<div class="toolbar"><h2 style="margin:0">Bản đồ thị trường</h2>';
+    ['map', 'list'].concat(isLeader ? ['coverage'] : []).forEach(function (m) {
+      var label = m === 'map' ? 'Bản đồ' : (m === 'list' ? 'Danh sách' : 'Độ phủ');
+      html += '<button class="btn ' + (marketMapMode === m ? 'primary' : 'ghost') + '" data-mmmode="' + m + '">' + label + '</button>';
+    });
+    html += '<button class="btn success" id="btnQuickCheckin" style="margin-left:auto">⚡ Check-in nhanh</button>';
+    html += '<button class="btn ghost" id="btnNewOutlet">+ Thêm điểm bán (đầy đủ)</button></div>';
+
+    html += '<div class="toolbar" id="mmFilters">';
+    html += '<button class="btn ' + (!mmFilter.province ? 'primary' : 'ghost') + '" data-fprovince="">Tất cả khu vực</button>';
+    cfg.provinces.forEach(function (p) {
+      html += '<button class="btn ' + (mmFilter.province === p ? 'primary' : 'ghost') + '" data-fprovince="' + p + '">' + p + '</button>';
+    });
+    html += '<select id="fStatus"><option value="">Trạng thái: Tất cả</option>' +
+      cfg.outletStatuses.map(function (s) { return '<option ' + (mmFilter.status === s ? 'selected' : '') + '>' + s + '</option>'; }).join('') + '</select>';
+    html += '<select id="fSoftware"><option value="">Phần mềm đang dùng: Tất cả</option>' +
+      cfg.currentSoftwareOptions.map(function (s) { return '<option ' + (mmFilter.currentSoftware === s ? 'selected' : '') + '>' + s + '</option>'; }).join('') + '</select>';
+    html += '<select id="fUrgency"><option value="">Thời gian còn lại: Tất cả</option>' +
+      '<option value="red" ' + (mmFilter.urgency === 'red' ? 'selected' : '') + '>Sắp hết hạn (≤30 ngày)</option>' +
+      '<option value="amber" ' + (mmFilter.urgency === 'amber' ? 'selected' : '') + '>31–90 ngày</option>' +
+      '<option value="green" ' + (mmFilter.urgency === 'green' ? 'selected' : '') + '>Trên 90 ngày</option>' +
+      '<option value="gray" ' + (mmFilter.urgency === 'gray' ? 'selected' : '') + '>Không rõ</option></select>';
+    if (isLeader) {
+      html += '<select id="fOwner"><option value="">Tất cả nhân viên</option>' +
+        members.map(function (m) { return '<option value="' + m.email + '" ' + (mmFilter.ownerEmail === m.email ? 'selected' : '') + '>' + (m.name || m.email) + '</option>'; }).join('') + '</select>';
+    }
+    html += '<input id="fSearch" placeholder="Tìm theo tên/SĐT/địa chỉ" value="' + (mmFilter.search || '') + '">';
+    html += '</div>';
+
+    html += '<div id="mmBody"></div>';
+    main.innerHTML = html;
+
+    Array.prototype.forEach.call(document.querySelectorAll('[data-mmmode]'), function (b) {
+      b.addEventListener('click', function () { marketMapMode = b.getAttribute('data-mmmode'); paintMarketMap(members); });
+    });
+    document.getElementById('btnNewOutlet').addEventListener('click', function () { openOutletForm(null, members); });
+    document.getElementById('btnQuickCheckin').addEventListener('click', openQuickCheckin);
+    Array.prototype.forEach.call(document.querySelectorAll('[data-fprovince]'), function (b) {
+      b.addEventListener('click', function () { mmFilter.province = b.getAttribute('data-fprovince'); loadMarketMap(); });
+    });
+    document.getElementById('fStatus').addEventListener('change', function (e) { mmFilter.status = e.target.value; loadMarketMap(); });
+    document.getElementById('fSoftware').addEventListener('change', function (e) { mmFilter.currentSoftware = e.target.value; loadMarketMap(); });
+    document.getElementById('fUrgency').addEventListener('change', function (e) { mmFilter.urgency = e.target.value; loadMarketMap(); });
+    if (isLeader) document.getElementById('fOwner').addEventListener('change', function (e) { mmFilter.ownerEmail = e.target.value; loadMarketMap(); });
+    document.getElementById('fSearch').addEventListener('input', debounce(function (e) { mmFilter.search = e.target.value; loadMarketMap(); }, 350));
+
+    var body = document.getElementById('mmBody');
+    if (marketMapMode === 'map') {
+      body.appendChild(el('<div id="mmMap"></div>'));
+      renderLeafletMap();
+    } else if (marketMapMode === 'list') {
+      body.appendChild(el(renderOutletList()));
+    } else {
+      renderCoverageInto(body);
+    }
+  }
+
+  function renderOutletList() {
+    var html = '<div class="card"><table><thead><tr><th>Tên điểm bán</th><th>Khu vực</th><th>Trạng thái</th>' +
+      '<th>Phần mềm đang dùng</th><th>Thời gian còn lại</th><th>Bán thêm được gì</th><th>Phụ trách</th></tr></thead><tbody>';
+    if (STATE.outletsCache.length === 0) html += '<tr><td colspan="7" class="muted">Chưa có điểm bán nào.</td></tr>';
+    STATE.outletsCache.forEach(function (o) {
+      html += '<tr class="clickable" data-id="' + o.id + '"><td>' + o.name + '</td><td>' + o.province + '</td>' +
+        '<td><span class="badge ' + statusBadgeClass_(o.status) + '">' + o.status + '</span></td>' +
+        '<td>' + (o.currentSoftware === 'Khác' ? o.currentSoftwareOther : (o.currentSoftware || '—')) + '</td>' +
+        '<td>' + urgencyBadge_(o) + '</td>' +
+        '<td>' + (o.upsellItems.join(', ') || '—') + '</td>' +
+        '<td>' + (o.ownerEmail || '') + '</td></tr>';
+    });
+    html += '</tbody></table></div>';
+    setTimeout(function () {
+      Array.prototype.forEach.call(document.querySelectorAll('#mmBody tr[data-id]'), function (tr) {
+        tr.addEventListener('click', function () { openOutletDetail(tr.getAttribute('data-id')); });
+      });
+    }, 0);
+    return html;
+  }
+
+  // Chỉ tải thư viện Leaflet (CSS+JS từ CDN) khi người dùng thực sự mở tab Bản đồ,
+  // thay vì tải sẵn ngay từ đầu — giúp các tab khác load nhanh hơn.
+  var leafletReady = null;
+  function ensureLeaflet() {
+    if (window.L) return Promise.resolve();
+    if (leafletReady) return leafletReady;
+    leafletReady = new Promise(function (resolve, reject) {
+      var link = document.createElement('link');
+      link.rel = 'stylesheet';
+      link.href = 'https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css';
+      document.head.appendChild(link);
+      var script = document.createElement('script');
+      script.src = 'https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js';
+      script.onload = function () { resolve(); };
+      script.onerror = function () { reject(new Error('Không tải được thư viện bản đồ. Kiểm tra kết nối mạng rồi thử lại.')); };
+      document.head.appendChild(script);
+    });
+    return leafletReady;
+  }
+
+  // Bao vùng 4 khu vực Đắk Lắk / Gia Lai / Phú Yên / Quy Nhơn — bản đồ chỉ xoay quanh
+  // vùng này, không cho kéo/zoom ra ngoài để dễ tìm điểm bán khi check-in.
+  var REGION_BOUNDS = [[11.6, 106.8], [15.1, 110.0]];
+
+  function renderLeafletMap() {
+    var body = document.getElementById('mmBody');
+    ensureLeaflet().then(function () {
+      setTimeout(function () {
+        if (mmLeafletMap) { mmLeafletMap.remove(); mmLeafletMap = null; }
+        mmLeafletMap = L.map('mmMap', {
+          maxBounds: REGION_BOUNDS,
+          maxBoundsViscosity: 0.8,
+          minZoom: 7
+        }).fitBounds(REGION_BOUNDS);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+          attribution: '&copy; OpenStreetMap contributors'
+        }).addTo(mmLeafletMap);
+
+        var colorFor = { 'Đã hợp tác': '#16D865', 'Đang khai thác': '#F5A524', 'Tiềm năng': '#6B7280', 'Ngừng hợp tác': '#E5484D' };
+        STATE.outletsCache.forEach(function (o) {
+          if (!o.lat || !o.lng) return;
+          var marker = L.circleMarker([Number(o.lat), Number(o.lng)], {
+            radius: 8, color: '#fff', weight: 2, fillColor: colorFor[o.status] || '#6B7280', fillOpacity: 0.95
+          }).addTo(mmLeafletMap);
+          marker.bindPopup('<b>' + o.name + '</b><br>' + o.status + '<br><a href="#" data-open-outlet="' + o.id + '">Xem chi tiết →</a>');
+          marker.on('popupopen', function () {
+            var link = document.querySelector('[data-open-outlet="' + o.id + '"]');
+            if (link) link.addEventListener('click', function (e) { e.preventDefault(); openOutletDetail(o.id); });
+          });
+        });
+
+        mmLeafletMap.on('click', function (e) {
+          if (!confirm('Thêm điểm bán mới tại vị trí này?')) return;
+          openOutletForm({ lat: e.latlng.lat, lng: e.latlng.lng });
+        });
+      }, 0);
+    }).catch(function (err) {
+      body.innerHTML = '<p class="muted">' + err.message + '</p>';
+    });
+  }
+
+  function renderCoverageInto(body) {
+    callServer('getCoverageStats', { province: mmFilter.province }).then(function (data) {
+      var html = '<div class="kpi-row">';
+      Object.keys(data.byProvince).forEach(function (p) {
+        var s = data.byProvince[p];
+        var pct = s.total > 0 ? Math.round(s.visited30d / s.total * 100) : null;
+        html += '<div class="kpi"><div class="label">' + p + '</div><div class="value">' + s.total + ' điểm</div>' +
+          '<div class="muted" style="margin-top:4px;font-size:12px">Đã ghé 30 ngày: ' + (pct === null ? '—' : pct + '%') +
+          ' · Sắp hết hạn: ' + s.urgent + '</div></div>';
+      });
+      html += '</div>';
+      html += '<div class="card"><table><thead><tr><th>Sale</th><th>Số điểm phụ trách</th><th>Đã ghé (30 ngày)</th></tr></thead><tbody>';
+      if (data.byRep.length === 0) html += '<tr><td colspan="3" class="muted">Chưa có Sale nào.</td></tr>';
+      data.byRep.forEach(function (r) {
+        html += '<tr><td>' + (r.name || r.email) + '</td><td>' + r.total + '</td><td>' + r.visited30d + '/' + r.total + '</td></tr>';
+      });
+      html += '</tbody></table></div>';
+      body.innerHTML = html;
+    });
+  }
+
+  function openOutletForm(defaults, members) {
+    defaults = defaults || {};
+    Promise.all([ensureMmConfig(), Promise.resolve(members || (STATE.user.role === 'LEADER' ? callServer('listSaleMembers') : []))]).then(function (r) {
+      var cfg = r[0], memberList = r[1];
+      var isLeader = STATE.user.role === 'LEADER';
+      var isEdit = !!defaults.id;
+      var ownerField = isLeader
+        ? '<select id="oOwner">' + [{ email: STATE.user.email, name: STATE.user.name + ' (bạn)' }].concat(memberList).map(function (m) {
+            return '<option value="' + m.email + '" ' + (defaults.ownerEmail === m.email ? 'selected' : '') + '>' + (m.name || m.email) + '</option>';
+          }).join('') + '</select>'
+        : '<input value="' + STATE.user.email + '" disabled>';
+
+      var html = '<h3>' + (isEdit ? 'Sửa điểm bán' : 'Thêm điểm bán mới') + '</h3>';
+      html += '<div class="field"><label>Tên điểm bán</label><input id="oName" value="' + (defaults.name || '') + '"></div>';
+
+      html += '<div class="form-section tint-blue"><h4><span class="dot"></span>Thông tin cơ bản</h4>';
+      html += '<div class="row">';
+      html += '<div class="field col"><label>Loại hình</label><select id="oType">' +
+        cfg.outletTypes.map(function (t) { return '<option ' + (defaults.type === t ? 'selected' : '') + '>' + t + '</option>'; }).join('') + '</select></div>';
+      html += '<div class="field col"><label>Khu vực</label><select id="oProvince">' +
+        cfg.provinces.map(function (p) { return '<option ' + (defaults.province === p ? 'selected' : '') + '>' + p + '</option>'; }).join('') + '</select></div>';
+      html += '</div>';
+      html += '<div class="field"><label>Địa chỉ</label><input id="oAddress" value="' + (defaults.address || '') + '"></div>';
+      html += '<div class="row">';
+      html += '<div class="field col"><label>SĐT</label><input id="oPhone" value="' + (defaults.phone || '') + '"></div>';
+      html += '<div class="field col"><label>Người phụ trách</label>' + ownerField + '</div>';
+      html += '</div>';
+      html += '<div class="field"><label>Trạng thái</label><select id="oStatus">' +
+        cfg.outletStatuses.map(function (s) { return '<option ' + (defaults.status === s ? 'selected' : '') + '>' + s + '</option>'; }).join('') + '</select></div>';
+      html += '</div>';
+
+      html += '<div class="form-section tint-amber"><h4><span class="dot"></span>Phần mềm & hợp đồng</h4>';
+      html += '<div class="row">';
+      html += '<div class="field col"><label>Phần mềm đang dùng</label><select id="oSoftware">' +
+        cfg.currentSoftwareOptions.map(function (s) { return '<option ' + (defaults.currentSoftware === s ? 'selected' : '') + '>' + s + '</option>'; }).join('') + '</select></div>';
+      html += '<div class="field col"><label>Ghi rõ nếu chọn "Khác"</label><input id="oSoftwareOther" value="' + (defaults.currentSoftwareOther || '') + '"></div>';
+      html += '</div>';
+      html += '<div class="row">';
+      html += '<div class="field col"><label>Ngày hết hạn hợp đồng (nếu biết)</label><input id="oExpiry" type="date" value="' + (defaults.contractExpiry ? String(defaults.contractExpiry).slice(0, 10) : '') + '"></div>';
+      html += '<div class="field col"><label>Hoặc ước lượng thời gian còn lại</label><select id="oEstimate"><option value="">— Không chọn —</option>' +
+        cfg.contractEstimateOptions.map(function (s) { return '<option ' + (defaults.contractEstimate === s ? 'selected' : '') + '>' + s + '</option>'; }).join('') + '</select></div>';
+      html += '</div>';
+      html += '</div>';
+
+      html += '<div class="form-section tint-green"><h4><span class="dot"></span>Cơ hội bán thêm</h4>';
+      html += '<div class="chip-group" id="oUpsell">' + cfg.upsellItems.map(function (u) {
+        var checked = (defaults.upsellItems || []).indexOf(u) !== -1;
+        return '<label class="chip-check' + (checked ? ' checked' : '') + '"><input type="checkbox" value="' + u + '" ' + (checked ? 'checked' : '') + '>' + u + '</label>';
+      }).join('') + '</div>';
+      html += '</div>';
+
+      html += '<div class="field"><label>Ghi chú</label><textarea id="oNote" rows="2">' + (defaults.note || '') + '</textarea></div>';
+      html += '<div class="field"><label>Vị trí GPS</label><div class="row" style="align-items:center">' +
+        '<span class="muted" id="oGpsLabel">' + (defaults.lat ? Number(defaults.lat).toFixed(5) + ', ' + Number(defaults.lng).toFixed(5) : 'Chưa có toạ độ') + '</span>' +
+        '<button type="button" class="btn ghost" id="oUseGps">Dùng vị trí hiện tại</button></div></div>';
+
+      html += '<div class="row" style="justify-content:flex-end"><button class="btn ghost" id="oCancel">Huỷ</button><button class="btn primary" id="oSubmit">' + (isEdit ? 'Lưu' : 'Thêm điểm bán') + '</button></div>';
+
+      showModal(html);
+      Array.prototype.forEach.call(document.querySelectorAll('#oUpsell .chip-check'), function (label) {
+        var input = label.querySelector('input');
+        input.addEventListener('change', function () { label.classList.toggle('checked', input.checked); });
+      });
+      var gps = { lat: defaults.lat || '', lng: defaults.lng || '' };
+      document.getElementById('oCancel').addEventListener('click', closeModal);
+      document.getElementById('oUseGps').addEventListener('click', function () {
+        if (!navigator.geolocation) return alert('Trình duyệt không hỗ trợ định vị.');
+        navigator.geolocation.getCurrentPosition(function (pos) {
+          gps.lat = pos.coords.latitude; gps.lng = pos.coords.longitude;
+          document.getElementById('oGpsLabel').textContent = gps.lat.toFixed(5) + ', ' + gps.lng.toFixed(5);
+        }, function (err) { alert('Không lấy được vị trí: ' + err.message); });
+      });
+      document.getElementById('oSubmit').addEventListener('click', function () {
+        var name = document.getElementById('oName').value;
+        if (!name) return alert('Nhập tên điểm bán.');
+        var upsellItems = Array.prototype.slice.call(document.querySelectorAll('#oUpsell input:checked')).map(function (c) { return c.value; });
+        var payload = {
+          name: name,
+          type: document.getElementById('oType').value,
+          province: document.getElementById('oProvince').value,
+          address: document.getElementById('oAddress').value,
+          phone: document.getElementById('oPhone').value,
+          ownerEmail: isLeader ? document.getElementById('oOwner').value : STATE.user.email,
+          status: document.getElementById('oStatus').value,
+          currentSoftware: document.getElementById('oSoftware').value,
+          currentSoftwareOther: document.getElementById('oSoftwareOther').value,
+          contractExpiry: document.getElementById('oExpiry').value,
+          contractEstimate: document.getElementById('oEstimate').value,
+          upsellItems: upsellItems,
+          note: document.getElementById('oNote').value,
+          lat: gps.lat, lng: gps.lng
+        };
+        var call = isEdit ? callServer('updateOutlet', defaults.id, payload) : callServer('createOutlet', payload);
+        call.then(function () { closeModal(); loadMarketMap(); }).catch(function (err) { alert(err.message || err); });
+      });
+    });
+  }
+
+  function openOutletDetail(id) {
+    callServer('getOutletDetail', id).then(function (r) {
+      var o = r.outlet, visits = r.visits;
+      var html = '<h3>' + o.name + '</h3><p class="muted">' + (o.address || '') + ' · ' + o.province + '</p>';
+      html += '<p><span class="badge ' + statusBadgeClass_(o.status) + '">' + o.status + '</span> ' + urgencyBadge_(o) + '</p>';
+      html += '<p>Phần mềm đang dùng: <b>' + (o.currentSoftware === 'Khác' ? o.currentSoftwareOther : (o.currentSoftware || '—')) + '</b></p>';
+      html += '<p>Bán thêm được gì: <b>' + (o.upsellItems.join(', ') || '—') + '</b></p>';
+      if (o.note) html += '<p class="muted">Ghi chú: ' + o.note + '</p>';
+      html += '<div class="row" style="margin:10px 0"><button class="btn success" id="dCheckin">📍 Check-in tại đây</button><button class="btn ghost" id="dEdit">Sửa thông tin</button></div>';
+      html += '<h4>Lịch sử ghé thăm</h4>';
+      if (visits.length === 0) html += '<p class="muted">Chưa có lượt check-in nào.</p>';
+      visits.forEach(function (v) {
+        html += '<div class="checklist-item"><span class="title">' + v.purpose + (v.note ? ' — ' + v.note : '') + '</span>' +
+          '<span class="meta">' + new Date(v.checkinAt).toLocaleString('vi-VN') + (v.distanceM != null && v.distanceM !== '' ? ' · ' + v.distanceM + 'm' : '') +
+          (v.photoUrl ? ' · <a href="' + v.photoUrl + '" target="_blank">Xem ảnh</a>' : '') + '</span></div>';
+      });
+      html += '<div class="row" style="justify-content:flex-end;margin-top:10px"><button class="btn ghost" id="dClose">Đóng</button></div>';
+      showModal(html);
+      document.getElementById('dClose').addEventListener('click', closeModal);
+      document.getElementById('dEdit').addEventListener('click', function () { closeModal(); openOutletForm(o); });
+      document.getElementById('dCheckin').addEventListener('click', function () { doCheckIn(o); });
+    });
+  }
+
+  // Mở thẳng camera của máy (không qua hộp thoại chọn file/thư viện ảnh của hệ điều
+  // hành) bằng getUserMedia, chụp xong tự resize + nén JPEG luôn trên canvas.
+  function capturePhoto_() {
+    return new Promise(function (resolve, reject) {
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        reject(new Error('Trình duyệt không hỗ trợ mở máy ảnh trực tiếp.'));
+        return;
+      }
+      navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } }).then(function (stream) {
+        var overlay = el(
+          '<div class="modal-backdrop" style="z-index:10050"><div class="modal" style="max-width:460px;padding:0;overflow:hidden;border-top:none">' +
+          '<video autoplay playsinline style="width:100%;display:block;background:#000;max-height:70vh"></video>' +
+          '<div class="row" style="padding:14px;justify-content:space-between">' +
+          '<button type="button" class="btn ghost" data-act="cancel">Huỷ</button>' +
+          '<button type="button" class="btn success" data-act="shutter">📷 Chụp</button>' +
+          '</div></div></div>'
+        );
+        document.body.appendChild(overlay);
+        var video = overlay.querySelector('video');
+        video.srcObject = stream;
+
+        function cleanup() {
+          stream.getTracks().forEach(function (t) { t.stop(); });
+          overlay.remove();
+        }
+        overlay.querySelector('[data-act="cancel"]').addEventListener('click', function () {
+          cleanup();
+          reject(new Error('CANCELLED'));
+        });
+        overlay.querySelector('[data-act="shutter"]').addEventListener('click', function () {
+          var maxDim = 1280;
+          var scale = Math.min(1, maxDim / Math.max(video.videoWidth, video.videoHeight));
+          var canvas = document.createElement('canvas');
+          canvas.width = Math.round(video.videoWidth * scale) || video.videoWidth;
+          canvas.height = Math.round(video.videoHeight * scale) || video.videoHeight;
+          canvas.getContext('2d').drawImage(video, 0, 0, canvas.width, canvas.height);
+          var dataUrl = canvas.toDataURL('image/jpeg', 0.7);
+          cleanup();
+          resolve(dataUrl);
+        });
+      }).catch(function (err) {
+        reject(new Error('Không mở được máy ảnh: ' + (err && err.message ? err.message : err)));
+      });
+    });
+  }
+
+  // Gắn nút "Chụp ảnh" + khung preview vào 1 field trong modal đang mở.
+  // Trả về hàm getter để lấy dataURL ảnh hiện tại lúc submit.
+  function wirePhotoCapture_(btnId, previewId) {
+    var current = '';
+    function render() {
+      var preview = document.getElementById(previewId);
+      preview.innerHTML = current
+        ? '<img src="' + current + '" style="max-width:100%;max-height:160px;border-radius:8px;border:1px solid var(--border);display:block;margin-bottom:6px">' +
+          '<button type="button" class="btn ghost" data-act="retake">Chụp lại</button>'
+        : '';
+      if (current) preview.querySelector('[data-act="retake"]').addEventListener('click', open);
+    }
+    function open() {
+      capturePhoto_().then(function (dataUrl) {
+        current = dataUrl;
+        render();
+      }).catch(function (err) {
+        if (err.message !== 'CANCELLED') alert(err.message);
+      });
+    }
+    document.getElementById(btnId).addEventListener('click', open);
+    return function () { return current; };
+  }
+
+  // Luồng nhanh nhất: gặp 1 điểm bán chưa có trong hệ thống, chỉ cần tên + loại hình +
+  // khu vực + ảnh là check-in được ngay, không phải điền form đầy đủ (SĐT, địa chỉ,
+  // hợp đồng...) trước — những thông tin đó có thể bổ sung sau qua "Sửa thông tin".
+  function openQuickCheckin() {
+    if (!navigator.geolocation) return alert('Trình duyệt không hỗ trợ định vị.');
+    navigator.geolocation.getCurrentPosition(function (pos) {
+      var lat = pos.coords.latitude, lng = pos.coords.longitude;
+      ensureMmConfig().then(function (cfg) {
+        var html = '<h3>⚡ Check-in nhanh</h3>';
+        html += '<div class="field"><label>Tên điểm bán</label><input id="qName" placeholder="VD: Tạp hoá Cô Lan" autofocus></div>';
+        html += '<div class="row">';
+        html += '<div class="field col"><label>Loại hình</label><select id="qType">' +
+          cfg.outletTypes.map(function (t) { return '<option>' + t + '</option>'; }).join('') + '</select></div>';
+        html += '<div class="field col"><label>Khu vực</label><select id="qProvince">' +
+          cfg.provinces.map(function (p) { return '<option>' + p + '</option>'; }).join('') + '</select></div>';
+        html += '</div>';
+        html += '<div class="row">';
+        html += '<div class="field col"><label>Phần mềm đang dùng</label><select id="qSoftware">' +
+          cfg.currentSoftwareOptions.map(function (s) { return '<option>' + s + '</option>'; }).join('') + '</select></div>';
+        html += '<div class="field col"><label>Thời gian còn lại</label><select id="qEstimate"><option value="">— Không rõ —</option>' +
+          cfg.contractEstimateOptions.map(function (s) { return '<option>' + s + '</option>'; }).join('') + '</select></div>';
+        html += '</div>';
+        html += '<div class="field"><label>Ảnh chụp (tuỳ chọn)</label>' +
+          '<button type="button" class="btn ghost" id="qPhotoBtn">📷 Chụp ảnh</button>' +
+          '<div id="qPhotoPreview" style="margin-top:8px"></div></div>';
+        html += '<div class="field"><label>Ghi chú</label><textarea id="qNote" rows="2" placeholder="Tình hình tại điểm bán..."></textarea></div>';
+        html += '<p class="muted">Vị trí hiện tại: ' + lat.toFixed(5) + ', ' + lng.toFixed(5) + '</p>';
+        html += '<div class="row" style="justify-content:flex-end"><button class="btn ghost" id="qCancel">Huỷ</button><button class="btn success" id="qSubmit">✓ Check-in ngay</button></div>';
+        showModal(html);
+
+        var getPhoto = wirePhotoCapture_('qPhotoBtn', 'qPhotoPreview');
+
+        document.getElementById('qCancel').addEventListener('click', closeModal);
+        document.getElementById('qSubmit').addEventListener('click', function () {
+          var name = document.getElementById('qName').value;
+          if (!name) return alert('Nhập tên điểm bán.');
+          var btn = document.getElementById('qSubmit');
+          btn.disabled = true;
+          btn.textContent = 'Đang lưu…';
+          callServer('quickCheckin', {
+            name: name,
+            type: document.getElementById('qType').value,
+            province: document.getElementById('qProvince').value,
+            currentSoftware: document.getElementById('qSoftware').value,
+            contractEstimate: document.getElementById('qEstimate').value,
+            lat: lat, lng: lng,
+            purpose: 'Khảo sát thị trường',
+            note: document.getElementById('qNote').value,
+            photoDataUrl: getPhoto()
+          }).then(function () {
+            closeModal();
+            loadMarketMap();
+          }).catch(function (err) {
+            alert(err.message || err);
+            btn.disabled = false;
+            btn.textContent = '✓ Check-in ngay';
+          });
+        });
+      });
+    }, function (err) { alert('Không lấy được vị trí: ' + err.message); });
+  }
+
+  function doCheckIn(outlet) {
+    if (!navigator.geolocation) return alert('Trình duyệt không hỗ trợ định vị.');
+    navigator.geolocation.getCurrentPosition(function (pos) {
+      var lat = pos.coords.latitude, lng = pos.coords.longitude;
+      ensureMmConfig().then(function (cfg) {
+        var html = '<h3>Check-in · ' + outlet.name + '</h3>';
+        html += '<div class="field"><label>Mục đích ghé thăm</label><select id="ciPurpose">' +
+          cfg.visitPurposes.map(function (p) { return '<option>' + p + '</option>'; }).join('') + '</select></div>';
+        html += '<div class="field"><label>Ảnh chụp tại điểm bán (tuỳ chọn)</label>' +
+          '<button type="button" class="btn ghost" id="ciPhotoBtn">📷 Chụp ảnh</button>' +
+          '<div id="ciPhotoPreview" style="margin-top:8px"></div></div>';
+        html += '<div class="field"><label>Ghi chú</label><textarea id="ciNote" rows="2" placeholder="Tình hình tại điểm bán..."></textarea></div>';
+        html += '<p class="muted">Vị trí hiện tại: ' + lat.toFixed(5) + ', ' + lng.toFixed(5) + '</p>';
+        html += '<div class="row" style="justify-content:flex-end"><button class="btn ghost" id="ciCancel">Huỷ</button><button class="btn success" id="ciSubmit">Xác nhận check-in</button></div>';
+        showModal(html);
+
+        var getPhoto = wirePhotoCapture_('ciPhotoBtn', 'ciPhotoPreview');
+
+        document.getElementById('ciCancel').addEventListener('click', closeModal);
+        document.getElementById('ciSubmit').addEventListener('click', function () {
+          var btn = document.getElementById('ciSubmit');
+          btn.disabled = true;
+          btn.textContent = 'Đang lưu…';
+          callServer('checkIn', outlet.id, lat, lng, document.getElementById('ciPurpose').value, document.getElementById('ciNote').value, getPhoto())
+            .then(function () { closeModal(); openOutletDetail(outlet.id); })
+            .catch(function (err) {
+              alert(err.message || err);
+              btn.disabled = false;
+              btn.textContent = 'Xác nhận check-in';
+            });
+        });
+      });
+    }, function (err) { alert('Không lấy được vị trí: ' + err.message); });
+  }
+</script>
