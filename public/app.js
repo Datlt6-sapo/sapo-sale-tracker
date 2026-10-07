@@ -53,8 +53,94 @@
     document.getElementById('appRoot').classList.remove('hidden');
     document.getElementById('userName').textContent = res.user.name || res.user.email;
     document.getElementById('roleBadge').textContent = res.user.role === 'LEADER' ? 'Leader' : 'Sale';
-    renderNav();
-    showView(res.user.role === 'LEADER' ? 'dashboard' : 'marketmap');
+    if (res.user.role === 'LEADER') {
+      document.getElementById('sidebar').classList.remove('hidden');
+      renderNav();
+      showView('dashboard');
+    } else {
+      // Sale trên điện thoại: không sidebar, không tab khác — mở link là vào thẳng
+      // màn hình check-in, đơn giản tối đa.
+      document.getElementById('sidebar').classList.add('hidden');
+      renderSaleHome();
+    }
+  }
+
+  // ---------- Màn hình check-in cho Sale (không qua sidebar/tab) ----------
+  function renderSaleHome() {
+    var main = document.getElementById('mainContent');
+    main.innerHTML = '<p class="muted">Đang lấy vị trí…</p>';
+    if (!navigator.geolocation) {
+      main.innerHTML = '<div class="card"><p class="muted">Trình duyệt không hỗ trợ định vị.</p></div>';
+      return;
+    }
+    navigator.geolocation.getCurrentPosition(function (pos) {
+      paintSaleCheckinForm(pos.coords.latitude, pos.coords.longitude);
+    }, function (err) {
+      main.innerHTML = '<div class="card"><p class="muted">Không lấy được vị trí: ' + err.message + '</p>' +
+        '<button class="btn primary" id="retryGps" style="margin-top:8px">Thử lại</button></div>';
+      document.getElementById('retryGps').addEventListener('click', renderSaleHome);
+    }, { enableHighAccuracy: true });
+  }
+
+  function paintSaleCheckinForm(lat, lng) {
+    var main = document.getElementById('mainContent');
+    ensureMmConfig().then(function (cfg) {
+      var html = '<div class="card">';
+      html += '<h2 style="margin-top:0">📍 Check-in điểm bán</h2>';
+      html += '<p class="muted">Vị trí hiện tại: ' + lat.toFixed(5) + ', ' + lng.toFixed(5) + '</p>';
+      html += '<div class="field"><label>Tên điểm bán</label><input id="qName" placeholder="VD: Tạp hoá Cô Lan" autofocus></div>';
+      html += '<div class="field"><label>Loại hình</label><select id="qType">' +
+        cfg.outletTypes.map(function (t) { return '<option>' + t + '</option>'; }).join('') + '</select></div>';
+      html += '<div class="field"><label>Khu vực</label><select id="qProvince">' +
+        cfg.provinces.map(function (p) { return '<option>' + p + '</option>'; }).join('') + '</select></div>';
+      html += '<div class="field"><label>Phần mềm đang dùng</label><select id="qSoftware">' +
+        cfg.currentSoftwareOptions.map(function (s) { return '<option>' + s + '</option>'; }).join('') + '</select></div>';
+      html += '<div class="field"><label>Thời gian còn lại</label><select id="qEstimate"><option value="">— Không rõ —</option>' +
+        cfg.contractEstimateOptions.map(function (s) { return '<option>' + s + '</option>'; }).join('') + '</select></div>';
+      html += '<div class="field"><label>Ảnh chụp (tuỳ chọn)</label>' +
+        '<button type="button" class="btn ghost" id="qPhotoBtn">📷 Chụp ảnh</button>' +
+        '<div id="qPhotoPreview" style="margin-top:8px"></div></div>';
+      html += '<div class="field"><label>Ghi chú</label><textarea id="qNote" rows="2" placeholder="Tình hình tại điểm bán..."></textarea></div>';
+      html += '<button class="btn success" id="qSubmit" style="width:100%">✓ Check-in ngay</button>';
+      html += '</div>';
+      main.innerHTML = html;
+
+      var getPhoto = wirePhotoCapture_('qPhotoBtn', 'qPhotoPreview');
+      document.getElementById('qSubmit').addEventListener('click', function () {
+        var name = document.getElementById('qName').value;
+        if (!name) return alert('Nhập tên điểm bán.');
+        var btn = document.getElementById('qSubmit');
+        btn.disabled = true;
+        btn.textContent = 'Đang lưu…';
+        quickCheckin({
+          name: name,
+          type: document.getElementById('qType').value,
+          province: document.getElementById('qProvince').value,
+          currentSoftware: document.getElementById('qSoftware').value,
+          contractEstimate: document.getElementById('qEstimate').value,
+          lat: lat, lng: lng,
+          purpose: 'Khảo sát thị trường',
+          note: document.getElementById('qNote').value,
+          photoDataUrl: getPhoto()
+        }).then(function () {
+          paintSaleCheckinSuccess();
+        }).catch(function (err) {
+          alert(err.message || err);
+          btn.disabled = false;
+          btn.textContent = '✓ Check-in ngay';
+        });
+      });
+    });
+  }
+
+  function paintSaleCheckinSuccess() {
+    var main = document.getElementById('mainContent');
+    main.innerHTML = '<div class="card" style="text-align:center">' +
+      '<div style="font-size:40px">✅</div>' +
+      '<h2>Đã check-in thành công!</h2>' +
+      '<button class="btn primary" id="btnAgain">+ Check-in điểm khác</button>' +
+      '</div>';
+    document.getElementById('btnAgain').addEventListener('click', renderSaleHome);
   }
 
   function init() {
