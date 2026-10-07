@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Sapo Sale Tracker</title>
+  <meta name="theme-color" content="#007AFF">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="Sale Tracker">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <link rel="apple-touch-icon" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA1MTIgNTEyIj4KPHJlY3Qgd2lkdGg9IjUxMiIgaGVpZ2h0PSI1MTIiIHJ4PSIxMDAiIGZpbGw9IiMwMDdBRkYiLz4KPHRleHQgeD0iMjU2IiB5PSIzMzgiIGZvbnQtZmFtaWx5PSJBcmlhbCwgSGVsdmV0aWNhLCBzYW5zLXNlcmlmIiBmb250LXNpemU9IjI4MCIgZm9udC13ZWlnaHQ9IjcwMCIgZmlsbD0iI2ZmZmZmZiIgdGV4dC1hbmNob3I9Im1pZGRsZSI+UzwvdGV4dD4KPC9zdmc+Cg==">
+  <link rel="icon" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA1MTIgNTEyIj4KPHJlY3Qgd2lkdGg9IjUxMiIgaGVpZ2h0PSI1MTIiIHJ4PSIxMDAiIGZpbGw9IiMwMDdBRkYiLz4KPHRleHQgeD0iMjU2IiB5PSIzMzgiIGZvbnQtZmFtaWx5PSJBcmlhbCwgSGVsdmV0aWNhLCBzYW5zLXNlcmlmIiBmb250LXNpemU9IjI4MCIgZm9udC13ZWlnaHQ9IjcwMCIgZmlsbD0iI2ZmZmZmZiIgdGV4dC1hbmNob3I9Im1pZGRsZSI+UzwvdGV4dD4KPC9zdmc+Cg==">
+  <link rel="manifest" href="/manifest.json">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --blue: #007AFF;
+      --green: #16D865;
+      --bg: #F0F4F9;
+      --text: #14181A;
+      --muted: #6B7280;
+      --border: #E5E9F0;
+      --white: #FFFFFF;
+      --red: #E5484D;
+      --amber: #F5A524;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: 'Inter', Helvetica, Arial, sans-serif; background: var(--bg); color: var(--text); }
+    a { color: var(--blue); text-decoration: none; }
+    .hidden { display: none !important; }
+    #loading, #notInvited, #signIn { display: flex; align-items: center; justify-content: center; height: 100vh; flex-direction: column; gap: 12px; text-align: center; padding: 24px; }
+
+    .app-shell { display: flex; height: 100vh; }
+    #sidebar { width: 224px; flex-shrink: 0; background: var(--white); border-right: 1px solid var(--border); display: flex; flex-direction: column; padding: 20px 14px; }
+    .brand { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 16px; padding: 0 6px 18px; }
+    .brand .dot { width: 28px; height: 28px; border-radius: 8px; background: var(--green); flex-shrink: 0; }
+    .userchip { font-size: 13px; color: var(--muted); display: flex; align-items: center; gap: 8px; }
+    .role-badge { background: var(--blue); color: #fff; font-size: 11px; padding: 2px 8px; border-radius: 999px; font-weight: 600; }
+
+    nav#mainNav { display: flex; flex-direction: column; gap: 2px; }
+    nav#mainNav button { border: none; background: transparent; text-align: left; padding: 10px 12px; border-radius: 9px; font-size: 13.5px; font-weight: 600; color: var(--muted); cursor: pointer; white-space: nowrap; }
+    nav#mainNav button.active { background: #EAF3FE; color: var(--blue); }
+
+    .app-main { flex: 1; min-width: 0; display: flex; flex-direction: column; overflow-y: auto; }
+    header { background: var(--white); border-bottom: 1px solid var(--border); padding: 12px 20px; display: flex; align-items: center; justify-content: flex-end; gap: 10px; }
+    main { padding: 20px; max-width: 1080px; margin: 0 auto; width: 100%; }
+    .card { background: var(--white); border: 1px solid var(--border); border-radius: 14px; padding: 18px; margin-bottom: 16px; }
+    .row { display: flex; gap: 12px; flex-wrap: wrap; }
+    .col { flex: 1; min-width: 220px; }
+    .kpi-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-bottom: 16px; }
+    .kpi { background: var(--white); border: 1px solid var(--border); border-radius: 12px; padding: 14px; }
+    .kpi .label { font-size: 12px; color: var(--muted); margin-bottom: 6px; }
+    .kpi .value { font-size: 20px; font-weight: 700; }
+
+    input, select, textarea, button.btn { font-family: inherit; font-size: 13.5px; padding: 9px 12px; border-radius: 9px; border: 1px solid var(--border); background: #fff; color: var(--text); }
+    textarea { width: 100%; resize: vertical; }
+    button.btn { cursor: pointer; font-weight: 600; }
+    button.primary { background: var(--blue); color: #fff; border-color: var(--blue); }
+    button.success { background: var(--green); color: #fff; border-color: var(--green); }
+    button.ghost { background: transparent; }
+    button.danger { background: var(--red); color: #fff; border-color: var(--red); }
+    button:disabled { opacity: .5; cursor: not-allowed; }
+
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    th, td { text-align: left; padding: 10px 8px; border-bottom: 1px solid var(--border); }
+    th { color: var(--muted); font-weight: 600; font-size: 12px; text-transform: uppercase; }
+    tr.clickable { cursor: pointer; }
+    tr.clickable:hover { background: #FAFBFD; }
+
+    .badge { display: inline-block; padding: 2px 9px; border-radius: 999px; font-size: 11.5px; font-weight: 600; }
+    .badge.green { background: #DCF3EA; color: #0B8A4E; }
+    .badge.amber { background: #FDEDD9; color: #B5690A; }
+    .badge.red { background: #FCE4E4; color: #C22; }
+    .badge.gray { background: #EEF1F4; color: var(--muted); }
+
+    .checklist-item { display: flex; align-items: center; gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--border); }
+    .checklist-item.done .title { text-decoration: line-through; color: var(--muted); }
+    .checklist-item input[type=checkbox] { width: 18px; height: 18px; }
+    .checklist-item .title { flex: 1; font-size: 14px; }
+    .checklist-item .meta { font-size: 12px; color: var(--muted); }
+
+    .kanban { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; overflow-x: auto; }
+    .kanban-col { background: #F7F9FC; border-radius: 12px; padding: 10px; min-height: 120px; }
+    .kanban-col h4 { font-size: 12.5px; margin: 4px 6px 10px; color: var(--muted); }
+    .task-card { background: #fff; border: 1px solid var(--border); border-radius: 10px; padding: 10px; margin-bottom: 8px; font-size: 13px; cursor: grab; }
+    .task-card.overdue { border-color: var(--red); }
+    .task-card .t-title { font-weight: 600; margin-bottom: 4px; }
+    .task-card .t-meta { font-size: 11.5px; color: var(--muted); display: flex; justify-content: space-between; }
+
+    .cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; }
+    .cal-head { font-size: 11px; color: var(--muted); text-align: center; padding: 4px 0; font-weight: 600; }
+    .cal-cell { min-height: 58px; border: 1px solid var(--border); border-radius: 8px; padding: 6px; font-size: 12px; position: relative; background: #fff; }
+    .cal-cell.other-month { opacity: .35; }
+    .cal-cell.today { border-color: var(--blue); border-width: 2px; }
+    .cal-cell.clickable { cursor: pointer; }
+    .cal-cell.clickable:hover { background: #FAFBFD; }
+    .cal-dot { width: 9px; height: 9px; border-radius: 50%; position: absolute; top: 6px; right: 6px; }
+    .cal-dot.green { background: var(--green); }
+    .cal-dot.amber { background: var(--amber); }
+    .cal-dot.red { background: var(--red); }
+    .cal-dot.gray { background: #C7CDD6; }
+    .cal-legend { display: flex; gap: 14px; flex-wrap: wrap; font-size: 12px; color: var(--muted); margin-top: 12px; }
+    .cal-legend span { display: inline-flex; align-items: center; gap: 6px; }
+    .cal-legend i { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
+
+    .modal-backdrop { position: fixed; inset: 0; background: rgba(15,20,55,.35); display: flex; align-items: center; justify-content: center; z-index: 9999; padding: 16px; }
+    .modal { background: #fff; border-radius: 14px; padding: 20px; width: 100%; max-width: 520px; max-height: 85vh; overflow-y: auto; border-top: 4px solid var(--blue); }
+    .modal h3 { margin-top: 0; }
+    .field { margin-bottom: 10px; display: flex; flex-direction: column; gap: 4px; }
+    .field label { font-size: 12.5px; color: var(--muted); font-weight: 600; }
+    .field input, .field select, .field textarea { width: 100%; }
+    .toolbar { display: flex; gap: 8px; align-items: center; margin-bottom: 14px; flex-wrap: wrap; }
+
+    input:focus, select:focus, textarea:focus { outline: none; border-color: var(--blue); box-shadow: 0 0 0 3px rgba(0,122,255,.15); }
+
+    .form-section { border-radius: 12px; padding: 14px 16px 6px; margin-bottom: 16px; border: 1px solid var(--border); }
+    .form-section .field { background: transparent; }
+    .form-section h4 { margin: 0 0 12px; font-size: 12.5px; font-weight: 700; display: flex; align-items: center; gap: 7px; text-transform: uppercase; letter-spacing: .3px; }
+    .form-section h4 .dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+    .form-section.tint-blue { background: #F3F8FF; border-color: #D6E8FF; }
+    .form-section.tint-blue h4 { color: #0B5FCC; }
+    .form-section.tint-blue h4 .dot { background: var(--blue); }
+    .form-section.tint-amber { background: #FFF9EF; border-color: #FBE6C4; }
+    .form-section.tint-amber h4 { color: #B5690A; }
+    .form-section.tint-amber h4 .dot { background: var(--amber); }
+    .form-section.tint-green { background: #F0FBF5; border-color: #C9EFDA; }
+    .form-section.tint-green h4 { color: #0B8A4E; }
+    .form-section.tint-green h4 .dot { background: var(--green); }
+
+    .chip-group { display: flex; flex-wrap: wrap; gap: 8px; padding-bottom: 12px; }
+    .chip-check { display: inline-flex; align-items: center; gap: 6px; padding: 7px 12px; border-radius: 999px; border: 1px solid var(--border); background: #fff; font-size: 12.5px; font-weight: 500; cursor: pointer; user-select: none; transition: background .15s, border-color .15s, color .15s; }
+    .chip-check input { display: none; }
+    .chip-check.checked { background: var(--green); border-color: var(--green); color: #fff; font-weight: 600; }
+    .muted { color: var(--muted); font-size: 12.5px; }
+    h2 { font-size: 18px; margin: 0 0 14px; }
+
+    #mmMap { height: 480px; border-radius: 14px; overflow: hidden; border: 1px solid var(--border); }
+    #mmFilters select, #mmFilters input { font-size: 13px; }
+    .leaflet-popup-content a { font-weight: 600; }
+
+    #signIn .dot { width: 56px; height: 56px; border-radius: 16px; background: var(--green); margin-bottom: 6px; }
+    #signInError { color: var(--red); font-size: 13px; min-height: 18px; }
+  </style>
+</head>
+<body>
+
+  <div id="loading">
+    <div>Đang tải…</div>
+  </div>
+
+  <div id="signIn" class="hidden">
+    <span class="dot"></span>
+    <h2 style="margin:0">Sapo Sale Tracker</h2>
+    <p class="muted">Đăng nhập bằng tài khoản Google công ty (@sapo.vn) để tiếp tục.</p>
+    <button class="btn primary" id="btnSignIn">Đăng nhập bằng Google</button>
+    <p id="signInError"></p>
+  </div>
+
+  <div id="notInvited" class="hidden">
+    <h2 id="notInvitedTitle">Chưa có quyền truy cập</h2>
+    <p class="muted" id="notInvitedMsg">Tài khoản Google của bạn chưa được Leader thêm vào hệ thống. Hãy liên hệ Leader để được mời.</p>
+    <button class="btn ghost" id="btnSignOutBlocked">Đăng xuất</button>
+  </div>
+
+  <div id="appRoot" class="hidden app-shell">
+    <aside id="sidebar">
+      <div class="brand"><span class="dot"></span> Sapo Sale Tracker</div>
+      <nav id="mainNav"></nav>
+    </aside>
+    <div class="app-main">
+      <header>
+        <div class="userchip">
+          <span id="userName"></span>
+          <span class="role-badge" id="roleBadge"></span>
+        </div>
+        <button class="btn ghost" id="btnSignOut">Đăng xuất</button>
+      </header>
+      <main id="mainContent"></main>
+    </div>
+  </div>
+
+  <div id="modalRoot"></div>
+
+  <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore-compat.js"></script>
+  <script src="/firebase-init.js"></script>
+  <script src="/db.js"></script>
+  <script src="/app.js"></script>
+  <script>
+    document.getElementById('btnSignIn').addEventListener('click', doSignIn);
+    document.getElementById('btnSignOut').addEventListener('click', doSignOut);
+    document.getElementById('btnSignOutBlocked').addEventListener('click', doSignOut);
+  </script>
+</body>
+</html>
