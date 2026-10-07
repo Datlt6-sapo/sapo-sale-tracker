@@ -1,6 +1,6 @@
 {
-  "name": "Sapo Sale Tracker",
-  "short_name": "Sale Tracker",
+  "name": "Check-in điểm bán",
+  "short_name": "Check-in",
   "start_url": "./",
   "display": "standalone",
   "background_color": "#F0F4F9",

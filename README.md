@@ -1,42 +1,30 @@
-# Sapo Sale Tracker
+# Check-in điểm bán
 
-Web app nội bộ cho team Sale — chạy trên **Firebase** (Hosting + Firestore + Authentication). Không cần cài đặt gì — mở link là dùng được.
+1 trang web duy nhất (`docs/index.html`) cho nhân viên Sale check-in tại điểm bán. Không backend, không đăng nhập, không phụ thuộc Firebase hay Apps Script — chỉ HTML/CSS/JS thuần, host miễn phí trên GitHub Pages.
 
-**Link app**: https://sapo-sale-tracker.web.app
+**Link dùng**: https://datlt6-sapo.github.io/sapo-sale-tracker/
 
-> Trước đây chạy trên Google Apps Script, đã chuyển hẳn sang Firebase vì Apps Script triển khai bất tiện (deploy chậm, hay lỗi khó debug). Bản cũ được giữ lại ở `legacy-apps-script/` chỉ để tham khảo, không dùng nữa.
+## Cách hoạt động
 
-## Tính năng chính
+1. Mở link → trang tự xin quyền định vị GPS.
+2. Nhập: Tên cửa hàng, Ngành nghề, Khu vực (Đắk Lắk/Gia Lai/Phú Yên/Quy Nhơn), Phần mềm đang dùng, Thời gian còn lại, Ghi chú.
+3. Bấm "Check-in ngay" → dữ liệu (kèm toạ độ GPS) gửi thẳng tới 1 **Google Form** đã tạo sẵn, Form tự lưu vào **Google Sheet**.
 
-- **Đăng nhập Google** — chỉ chấp nhận tài khoản công ty `@sapo.vn`. Người đăng nhập lần đầu tự động có vai trò **Sale**; muốn lên **Leader** cần một Leader khác (hoặc admin) sửa trực tiếp trong Firestore Console.
-- **Nhật ký ngày**: Sale đặt mục tiêu doanh thu, chốt báo cáo cuối ngày.
-- **Task Board**: Kanban / danh sách / theo ngày, phân quyền Leader–Sale.
-- **Khách hàng**: CRM cơ bản, gắn lịch sử tương tác qua Task.
-- **Bản đồ thị trường**: quản lý điểm bán theo khu vực (Đắk Lắk, Gia Lai, Phú Yên, Quy Nhơn), check-in GPS, chụp ảnh tại chỗ (lưu thẳng trong Firestore dưới dạng ảnh nén nhỏ — không dùng Firebase Storage vì dịch vụ đó yêu cầu gói trả phí), theo dõi phần mềm đối thủ đang dùng + thời gian còn lại hợp đồng + cơ hội bán thêm.
-  - **Check-in nhanh**: Sale mở app → bấm "⚡ Check-in nhanh" → tự lấy định vị GPS → nhập nhanh Tên cửa hàng / Loại hình / Khu vực / Phần mềm đang dùng / Thời gian còn lại / chụp ảnh ngay trong app (camera trực tiếp, không qua hộp thoại chọn tệp) → xong trong 1 lượt lưu.
-- **Dashboard**: Leader theo dõi doanh thu & độ phủ thị trường toàn team.
+Xem dữ liệu ở đây: https://docs.google.com/spreadsheets/d/1UMXjZZi_cv58wmD9oR5u370fsWH1I743NdfKoOqijm8/edit
 
-## Kiến trúc
+## Vì sao làm thế này
 
-Không có máy chủ/backend riêng — toàn bộ logic chạy thẳng trên trình duyệt, gọi Firestore trực tiếp. Phân quyền (ai đọc/ghi được gì) được chốt chặn ở **Firestore Security Rules** (`firestore.rules`), không phải ở code JS (code JS chỉ kiểm tra thêm để báo lỗi rõ ràng, không phải lớp bảo mật chính).
+Đã thử qua Google Apps Script (deploy phức tạp, load chậm) rồi Firebase (nhiều bước thiết lập, một số dịch vụ bất ngờ yêu cầu gói trả phí, lỗi đăng nhập khó debug). Cả 2 đều bị bỏ. Cách này không có gì để "lỗi" — chỉ là 1 file tĩnh gửi dữ liệu tới Google Form, cơ chế mà Google tự vận hành và luôn ổn định.
 
-| File/Thư mục | Vai trò |
+## Cấu trúc
+
+| File | Vai trò |
 |---|---|
-| `public/index.html` | Khung giao diện (CSS, shell, màn hình đăng nhập) |
-| `public/firebase-init.js` | Cấu hình kết nối Firebase |
-| `public/db.js` | Toàn bộ logic nghiệp vụ (đọc/ghi Firestore) — thay cho các file `.gs` cũ |
-| `public/app.js` | Giao diện chính: Nhật ký, Task Board, Khách hàng, Dashboard, Bản đồ thị trường, Thành viên |
-| `public/manifest.json` | Web App Manifest — để nhân viên "Thêm vào Màn hình chính" trên điện thoại |
-| `firestore.rules` | Luật phân quyền đọc/ghi Firestore (Leader vs Sale) |
-| `legacy-apps-script/` | Bản cũ (Google Apps Script) — đã ngừng dùng, giữ để tham khảo |
+| `docs/index.html` | Toàn bộ trang (HTML/CSS/JS gộp 1 file) |
+| `docs/manifest.json` | Để nhân viên "Thêm vào Màn hình chính" trên điện thoại |
+| `setup-script/` | Script Apps Script dùng 1 lần để tạo Google Form + Sheet ở trên — không cần đụng tới lại trừ khi muốn tạo bộ form mới |
 
-## Triển khai
+## Sửa form (thêm/bớt câu hỏi)
 
-Quản lý qua [Firebase CLI](https://firebase.google.com/docs/cli):
-
-```bash
-firebase login
-firebase deploy --only firestore:rules,hosting --project=sapo-sale-tracker
-```
-
-Project Firebase thuộc tài khoản Google cá nhân của người triển khai đầu tiên (không phải tài khoản @sapo.vn, do IT công ty đã khoá quyền tạo project mới cho tài khoản domain) — ứng dụng vẫn chỉ cho phép người dùng cuối đăng nhập bằng email @sapo.vn.
+1. Mở Form: https://docs.google.com/forms/d/e/1FAIpQLSf46-i-6MdfCnSgltqIKmkPsSpyb6DTjpzBdxuCBSWwdWSlCQ/viewform — sửa trực tiếp trong Google Forms.
+2. Nếu đổi tên/thêm câu hỏi, cần lấy `entry.<id>` mới (menu ⋮ trong Form → "Nhận liên kết đã điền sẵn" → điền thử → copy link → đọc các `entry.xxx`) rồi cập nhật object `ENTRY` trong `docs/index.html`.
