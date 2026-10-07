@@ -71,6 +71,15 @@ function buildDashboard() {
   var R = "'" + respSheet.getName() + "'";
   var LAST = 5000; // đủ rộng cho nhiều năm dữ liệu
 
+  // Cho phép xem (không sửa được) qua link — để trang bản đồ/biểu đồ tĩnh đọc dữ
+  // liệu trực tiếp dạng CSV, không cần API key hay đăng nhập.
+  // ANYONE (không phải ANYONE_WITH_LINK) — cần mức này vì trang web gọi vào dạng
+  // ẩn danh hoàn toàn (fetch từ JS tĩnh), không đăng nhập Google nào cả. Người dùng
+  // đã xác nhận đồng ý công khai dữ liệu này (tên cửa hàng, GPS, ghi chú).
+  DriveApp.getFileById(CHECKIN_SHEET_ID).setSharing(DriveApp.Access.ANYONE, DriveApp.Permission.VIEW);
+  var csvUrl = 'https://docs.google.com/spreadsheets/d/' + CHECKIN_SHEET_ID + '/export?format=csv&gid=' + respSheet.getSheetId();
+  Logger.log('CSV export URL (dùng cho trang bản đồ/biểu đồ): ' + csvUrl);
+
   var dash = ss.insertSheet('Dashboard', 0);
   dash.setColumnWidths(1, 1, 220);
   dash.setColumnWidths(2, 2, 150);
@@ -133,6 +142,29 @@ function buildDashboard() {
     dash.getRange('B' + trow).setFormula('=IFERROR(COUNTA(FILTER(' + R + '!$B2:$B' + LAST + ',' + condThisType + ',' + condAreaDateOnly + ')),0)');
     dash.getRange('C' + trow).setFormula('=IFERROR(COUNTA(UNIQUE(FILTER(' + R + '!$B2:$B' + LAST + ',' + condThisType + ',' + condAreaDateOnly + '))),0)');
   }
+
+  // Biểu đồ cột trực quan — đặt hẳn sang cột N trở đi (xa khỏi mọi bảng ở cột A-G
+  // phía trên) để không bao giờ bị che/đè lên bảng số liệu dù danh sách chi tiết
+  // dài bao nhiêu dòng.
+  var areaChart = dash.newChart()
+    .asColumnChart()
+    .addRange(dash.getRange('A15:B' + (15 + PROVINCES.length)))
+    .setPosition(4, 14, 0, 0)
+    .setOption('title', 'Lượt check-in theo khu vực')
+    .setOption('legend', { position: 'none' })
+    .setOption('colors', ['#007AFF'])
+    .build();
+  dash.insertChart(areaChart);
+
+  var typeChart = dash.newChart()
+    .asColumnChart()
+    .addRange(dash.getRange('A' + typeStartRow + ':B' + (typeStartRow + OUTLET_TYPES.length)))
+    .setPosition(23, 14, 0, 0)
+    .setOption('title', 'Lượt check-in theo ngành nghề')
+    .setOption('legend', { position: 'none' })
+    .setOption('colors', ['#16D865'])
+    .build();
+  dash.insertChart(typeChart);
 
   // Danh sách chi tiết các lượt check-in khớp bộ lọc, mới nhất trước
   var listStartRow = typeStartRow + OUTLET_TYPES.length + 3;

@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Thống kê check-in</title>
+<meta name="theme-color" content="#007AFF">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css">
+<script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+<style>
+  :root { --blue:#007AFF; --green:#16D865; --bg:#F0F4F9; --text:#14181A; --muted:#6B7280; --border:#E5E9F0; --red:#E5484D; --amber:#F5A524; }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  body { margin:0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; background:var(--bg); color:var(--text); padding:18px 14px 40px; }
+  .wrap { max-width: 1040px; margin: 0 auto; }
+  h1 { font-size:19px; margin:0 0 2px; }
+  .muted { color:var(--muted); font-size:12.5px; }
+  .toolbar { display:flex; gap:10px; flex-wrap:wrap; align-items:center; margin:16px 0; }
+  select { font-family:inherit; font-size:14px; padding:9px 12px; border-radius:10px; border:1px solid var(--border); background:#fff; color:var(--text); }
+  .kpi-row { display:grid; grid-template-columns:repeat(auto-fit,minmax(140px,1fr)); gap:10px; margin-bottom:16px; }
+  .kpi { background:#fff; border:1px solid var(--border); border-radius:14px; padding:14px; box-shadow:0 2px 10px rgba(20,24,26,.04); }
+  .kpi .label { font-size:12px; color:var(--muted); margin-bottom:4px; }
+  .kpi .value { font-size:22px; font-weight:700; }
+  .card { background:#fff; border:1px solid var(--border); border-radius:16px; padding:16px; margin-bottom:16px; box-shadow:0 2px 10px rgba(20,24,26,.04); }
+  .card h2 { font-size:14px; margin:0 0 12px; }
+  #map { height:420px; border-radius:12px; overflow:hidden; }
+  .chart-row { display:grid; grid-template-columns:1fr 1fr; gap:16px; }
+  @media (max-width:720px) { .chart-row { grid-template-columns:1fr; } }
+  canvas { max-height:260px; }
+  a.back { display:inline-block; margin-bottom:10px; font-size:13px; color:var(--blue); text-decoration:none; }
+  .legend { display:flex; gap:14px; flex-wrap:wrap; font-size:12px; color:var(--muted); margin-top:10px; }
+  .legend span { display:inline-flex; align-items:center; gap:6px; }
+  .legend i { width:9px; height:9px; border-radius:50%; display:inline-block; }
+  #loadMsg { text-align:center; padding:40px 0; color:var(--muted); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <a class="back" href="./index.html">← Quay lại Check-in</a>
+  <h1>📊 Thống kê & độ phủ thị trường</h1>
+  <p class="muted" id="lastUpdated">Đang tải dữ liệu…</p>
+
+  <div id="loadMsg">Đang tải dữ liệu từ Google Sheet…</div>
+
+  <div id="content" style="display:none">
+    <div class="toolbar">
+      <select id="fArea"><option value="">Tất cả khu vực</option></select>
+      <select id="fType"><option value="">Tất cả ngành nghề</option></select>
+      <select id="fSoftware"><option value="">Tất cả phần mềm</option></select>
+    </div>
+
+    <div class="kpi-row">
+      <div class="kpi"><div class="label">Tổng lượt check-in</div><div class="value" id="kpiTotal">0</div></div>
+      <div class="kpi"><div class="label">Số cửa hàng riêng biệt</div><div class="value" id="kpiUnique">0</div></div>
+      <div class="kpi"><div class="label">Khu vực đang có dữ liệu</div><div class="value" id="kpiAreas">0</div></div>
+    </div>
+
+    <div class="card">
+      <h2>🗺️ Bản đồ độ phủ</h2>
+      <div id="map"></div>
+      <div class="legend">
+        <span><i style="background:#16D865"></i> Đã hợp tác/ổn</span>
+        <span><i style="background:#F5A524"></i> Sắp hết hạn phần mềm</span>
+        <span><i style="background:#007AFF"></i> Khác/chưa rõ</span>
+      </div>
+    </div>
+
+    <div class="chart-row">
+      <div class="card">
+        <h2>Theo khu vực</h2>
+        <canvas id="chartArea"></canvas>
+      </div>
+      <div class="card">
+        <h2>Theo ngành nghề</h2>
+        <canvas id="chartType"></canvas>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  var CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vRnAsPBmsqNTt1enos9-3SP4TU-FmjoKNSwV-yQl3GdHcY2uAOJXNtR88aydnTs5N7PUkRQ3k8Quj3w/pub?gid=1705857730&single=true&output=csv';
+  var REGION_BOUNDS = [[11.6, 106.8], [15.1, 110.0]];
+
+  // Parser CSV đơn giản, xử lý được dấu phẩy/ngoặc kép/bên trong giá trị (Ghi chú).
+  function parseCsv(text) {
+    var rows = [];
+    var row = [];
+    var field = '';
+    var inQuotes = false;
+    for (var i = 0; i < text.length; i++) {
+      var c = text[i];
+      if (inQuotes) {
+        if (c === '"') {
+          if (text[i + 1] === '"') { field += '"'; i++; } else { inQuotes = false; }
+        } else { field += c; }
+      } else {
+        if (c === '"') inQuotes = true;
+        else if (c === ',') { row.push(field); field = ''; }
+        else if (c === '\n') { row.push(field); rows.push(row); row = []; field = ''; }
+        else if (c === '\r') { /* skip */ }
+        else { field += c; }
+      }
+    }
+    if (field.length || row.length) { row.push(field); rows.push(row); }
+    return rows;
+  }
+
+  function loadData() {
+    return fetch(CSV_URL).then(function (res) {
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      return res.text();
+    }).then(function (text) {
+      var rows = parseCsv(text).filter(function (r) { return r.length > 1 && r[0] !== ''; });
+      var header = rows.shift();
+      return rows.map(function (r) {
+        return {
+          timestamp: r[0], shop: r[1], type: r[2], software: r[3],
+          timeLeft: r[4], area: r[5], note: r[6],
+          lat: parseFloat(r[7]), lng: parseFloat(r[8])
+        };
+      });
+    });
+  }
+
+  var ALL = [];
+  var map, markersLayer, chartArea, chartType;
+
+  function uniqueSorted(arr) {
+    var seen = {}; var out = [];
+    arr.forEach(function (v) { if (v && !seen[v]) { seen[v] = true; out.push(v); } });
+    out.sort();
+    return out;
+  }
+
+  function fillFilterOptions() {
+    var areaSel = document.getElementById('fArea');
+    var typeSel = document.getElementById('fType');
+    var softSel = document.getElementById('fSoftware');
+    uniqueSorted(ALL.map(function (d) { return d.area; })).forEach(function (v) {
+      areaSel.appendChild(new Option(v, v));
+    });
+    uniqueSorted(ALL.map(function (d) { return d.type; })).forEach(function (v) {
+      typeSel.appendChild(new Option(v, v));
+    });
+    uniqueSorted(ALL.map(function (d) { return d.software; })).forEach(function (v) {
+      softSel.appendChild(new Option(v, v));
+    });
+    [areaSel, typeSel, softSel].forEach(function (el) {
+      el.addEventListener('change', render);
+    });
+  }
+
+  function currentFilter() {
+    return {
+      area: document.getElementById('fArea').value,
+      type: document.getElementById('fType').value,
+      software: document.getElementById('fSoftware').value
+    };
+  }
+
+  function applyFilter(data, f) {
+    return data.filter(function (d) {
+      return (!f.area || d.area === f.area) &&
+        (!f.type || d.type === f.type) &&
+        (!f.software || d.software === f.software);
+    });
+  }
+
+  function countBy(data, key) {
+    var map = {};
+    data.forEach(function (d) {
+      var k = d[key] || '(trống)';
+      map[k] = (map[k] || 0) + 1;
+    });
+    return map;
+  }
+
+  function render() {
+    var f = currentFilter();
+    var data = applyFilter(ALL, f);
+
+    document.getElementById('kpiTotal').textContent = data.length;
+    document.getElementById('kpiUnique').textContent = uniqueSorted(data.map(function (d) { return d.shop; })).length;
+    document.getElementById('kpiAreas').textContent = uniqueSorted(data.map(function (d) { return d.area; })).length;
+
+    // Bản đồ
+    markersLayer.clearLayers();
+    data.forEach(function (d) {
+      if (!d.lat || !d.lng || isNaN(d.lat) || isNaN(d.lng)) return;
+      var color = '#007AFF';
+      if (d.timeLeft === 'Dưới 1 tháng') color = '#F5A524';
+      else if (d.timeLeft === 'Trên 6 tháng' || d.timeLeft === '3-6 tháng') color = '#16D865';
+      var m = L.circleMarker([d.lat, d.lng], { radius: 8, color: '#fff', weight: 2, fillColor: color, fillOpacity: .95 });
+      m.bindPopup('<b>' + (d.shop || '') + '</b><br>' + (d.type || '') + ' · ' + (d.area || '') +
+        '<br>Phần mềm: ' + (d.software || '—') + '<br>Còn lại: ' + (d.timeLeft || '—'));
+      markersLayer.addLayer(m);
+    });
+
+    // Biểu đồ theo khu vực
+    var byArea = countBy(data, 'area');
+    var areaLabels = Object.keys(byArea);
+    chartArea.data.labels = areaLabels;
+    chartArea.data.datasets[0].data = areaLabels.map(function (k) { return byArea[k]; });
+    chartArea.update();
+
+    // Biểu đồ theo ngành nghề
+    var byType = countBy(data, 'type');
+    var typeLabels = Object.keys(byType);
+    chartType.data.labels = typeLabels;
+    chartType.data.datasets[0].data = typeLabels.map(function (k) { return byType[k]; });
+    chartType.update();
+  }
+
+  function initMap() {
+    map = L.map('map', { maxBounds: REGION_BOUNDS, maxBoundsViscosity: .8, minZoom: 7 }).fitBounds(REGION_BOUNDS);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '&copy; OpenStreetMap' }).addTo(map);
+    markersLayer = L.layerGroup().addTo(map);
+  }
+
+  function initCharts() {
+    chartArea = new Chart(document.getElementById('chartArea'), {
+      type: 'bar',
+      data: { labels: [], datasets: [{ data: [], backgroundColor: '#007AFF', borderRadius: 6 }] },
+      options: { plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true, ticks: { precision: 0 } } } }
+    });
+    chartType = new Chart(document.getElementById('chartType'), {
+      type: 'bar',
+      data: { labels: [], datasets: [{ data: [], backgroundColor: '#16D865', borderRadius: 6 }] },
+      options: { plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true, ticks: { precision: 0 } } } }
+    });
+  }
+
+  loadData().then(function (data) {
+    ALL = data;
+    document.getElementById('loadMsg').style.display = 'none';
+    document.getElementById('content').style.display = 'block';
+    document.getElementById('lastUpdated').textContent = 'Tải lúc ' + new Date().toLocaleString('vi-VN') + ' · ' + data.length + ' lượt check-in';
+    initMap();
+    initCharts();
+    fillFilterOptions();
+    render();
+  }).catch(function (err) {
+    document.getElementById('loadMsg').textContent = 'Không tải được dữ liệu: ' + err.message;
+  });
+</script>
+</body>
+</html>
