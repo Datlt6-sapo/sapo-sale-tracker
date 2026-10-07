@@ -41,7 +41,9 @@
     var provider = new firebase.auth.GoogleAuthProvider();
     provider.setCustomParameters({ hd: 'sapo.vn' });
     document.getElementById('signInError').textContent = '';
-    auth.signInWithPopup(provider).catch(function (err) {
+    // Dùng redirect thay vì popup: popup hay bị trình duyệt điện thoại (đặc biệt
+    // Safari iOS) chặn hoặc không hiện ra được.
+    auth.signInWithRedirect(provider).catch(function (err) {
       document.getElementById('signInError').textContent = 'Đăng nhập lỗi: ' + err.message;
     });
   }
@@ -56,6 +58,10 @@
   }
 
   function init() {
+    auth.getRedirectResult().catch(function (err) {
+      document.getElementById('signIn').classList.remove('hidden');
+      document.getElementById('signInError').textContent = 'Đăng nhập lỗi: ' + err.message;
+    });
     auth.onAuthStateChanged(function (fbUser) {
       document.getElementById('loading').classList.add('hidden');
       document.getElementById('appRoot').classList.add('hidden');
