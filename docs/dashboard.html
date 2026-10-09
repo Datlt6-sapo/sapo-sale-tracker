@@ -218,9 +218,6 @@
   }
 
   function initMap() {
-    // Dùng setView cố định thay vì fitBounds — fitBounds tính sai zoom khi
-    // container #map chưa có kích thước ổn định lúc gọi, khiến bản đồ bị
-    // zoom quá sâu (xuống tận cấp tên đường) thay vì bao trọn Tây Nguyên.
     map = L.map('map', { maxBounds: REGION_BOUNDS, maxBoundsViscosity: .8, minZoom: 7 }).setView([13.35, 108.4], 7);
     // OpenStreetMap trực tiếp bị chặn mạng, CartoDB giờ bắt buộc API key —
     // dùng Esri World Street Map (miễn phí, không cần key).
@@ -229,6 +226,14 @@
       maxZoom: 19
     }).addTo(map);
     markersLayer = L.layerGroup().addTo(map);
+    // fitBounds ngay lúc khởi tạo tính sai zoom vì container #map chưa có
+    // kích thước ổn định tại thời điểm đó (gây zoom quá sâu hoặc quá xa
+    // tuỳ máy). Đợi 1 frame cho layout ổn định rồi mới ép khung theo đúng
+    // kích thước thật của khung bản đồ trên từng màn hình.
+    requestAnimationFrame(function () {
+      map.invalidateSize();
+      map.fitBounds(REGION_BOUNDS);
+    });
   }
 
   function initCharts() {
