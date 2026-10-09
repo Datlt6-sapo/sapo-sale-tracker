@@ -95,7 +95,8 @@
             <div class="chip" data-v="Tạp hóa">🏪 Tạp hóa</div>
             <div class="chip" data-v="Siêu thị mini">🛒 Siêu thị mini</div>
             <div class="chip" data-v="Nhà thuốc">💊 Nhà thuốc</div>
-            <div class="chip" data-v="Quán ăn/Cà phê (HORECA)">☕ Quán ăn/Cà phê</div>
+            <div class="chip" data-v="Quán ăn/Cà phê">☕ Quán ăn/Cà phê</div>
+            <div class="chip" data-v="Quán trà sữa">🧋 Quán trà sữa</div>
             <div class="chip" data-v="Khác">✳️ Khác</div>
           </div>
         </div>
@@ -137,6 +138,7 @@
         </div>
       </div>
 
+      <div class="field"><label>Tuyến đường</label><input id="fRoute" placeholder="VD: Nguyễn Tất Thành" autocomplete="off"></div>
       <div class="field"><label>Ghi chú</label><textarea id="fNote" rows="2" placeholder="Tình hình tại điểm bán..."></textarea></div>
       <button type="submit" class="primary" id="btnSubmit">✓ Check-in ngay</button>
     </form>
@@ -149,22 +151,11 @@
     <button class="success" id="btnAgain">+ Check-in điểm khác</button>
   </div>
 
-  <iframe name="hiddenFrame" style="display:none"></iframe>
-
 <script>
-  // Dữ liệu đổ thẳng vào Google Form này (đã tạo sẵn), Form tự lưu kết quả vào
-  // Google Sheet — không có backend/server nào khác, không cần đăng nhập.
-  var GOOGLE_FORM_ACTION = 'https://docs.google.com/forms/d/e/1FAIpQLSf46-i-6MdfCnSgltqIKmkPsSpyb6DTjpzBdxuCBSWwdWSlCQ/formResponse';
-  var ENTRY = {
-    shop: 'entry.206619534',
-    type: 'entry.1784949509',
-    software: 'entry.1179308414',
-    timeLeft: 'entry.1267826918',
-    area: 'entry.1673771205',
-    note: 'entry.1211350221',
-    lat: 'entry.1747791949',
-    lng: 'entry.1618001601'
-  };
+  // Gửi thẳng tới API check-in riêng (Apps Script Web App, ghi trực tiếp vào
+  // Google Sheet). Không còn dùng Google Form nữa vì Form bị chính sách công ty
+  // chặn không cho người ngoài gửi dữ liệu ẩn danh.
+  var API_URL = 'https://script.google.com/macros/s/AKfycbz9b1hdToFKIW2LVts2u4Z8NiNCL1Ri4V7DpoIvVyJ-GvIVHBqmzpvp_oK8QXUYHfiQ8g/exec';
 
   // Nhóm nút chọn nhanh (chip) — 1 chạm chọn, không cần mở dropdown. Trả về hàm
   // get() để đọc giá trị đang chọn lúc submit.
@@ -228,37 +219,31 @@
     btn.disabled = true;
     btn.textContent = 'Đang lưu…';
 
-    var params = {};
-    params[ENTRY.shop] = shop;
-    params[ENTRY.type] = getType();
-    params[ENTRY.software] = getSoftware();
-    params[ENTRY.timeLeft] = getTimeLeft();
-    params[ENTRY.area] = getArea();
-    params[ENTRY.note] = document.getElementById('fNote').value;
-    params[ENTRY.lat] = coords ? coords.lat : '';
-    params[ENTRY.lng] = coords ? coords.lng : '';
+    var body = new URLSearchParams();
+    body.set('shop', shop);
+    body.set('type', getType());
+    body.set('software', getSoftware());
+    body.set('timeLeft', getTimeLeft());
+    body.set('area', getArea());
+    body.set('route', document.getElementById('fRoute').value.trim());
+    body.set('note', document.getElementById('fNote').value);
+    body.set('lat', coords ? coords.lat : '');
+    body.set('lng', coords ? coords.lng : '');
 
-    var form = document.createElement('form');
-    form.action = GOOGLE_FORM_ACTION;
-    form.method = 'POST';
-    form.target = 'hiddenFrame';
-    Object.keys(params).forEach(function (k) {
-      var input = document.createElement('input');
-      input.type = 'hidden';
-      input.name = k;
-      input.value = params[k];
-      form.appendChild(input);
-    });
-    document.body.appendChild(form);
-    form.submit();
-    form.parentNode.removeChild(form);
-
-    setTimeout(function () {
-      document.getElementById('formCard').classList.add('hidden');
-      document.getElementById('successCard').classList.remove('hidden');
-      btn.disabled = false;
-      btn.textContent = '✓ Check-in ngay';
-    }, 800);
+    fetch(API_URL, { method: 'POST', body: body })
+      .then(function (res) { return res.json(); })
+      .then(function (data) {
+        if (!data.ok) throw new Error(data.error || 'Lỗi không rõ');
+        document.getElementById('formCard').classList.add('hidden');
+        document.getElementById('successCard').classList.remove('hidden');
+      })
+      .catch(function (err) {
+        alert('Check-in lỗi: ' + err.message + ' — thử lại nhé.');
+      })
+      .then(function () {
+        btn.disabled = false;
+        btn.textContent = '✓ Check-in ngay';
+      });
   });
 
   document.getElementById('btnAgain').addEventListener('click', function () {

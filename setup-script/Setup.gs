@@ -47,7 +47,7 @@ function setupCheckinForm() {
 
 var CHECKIN_SHEET_ID = '1UMXjZZi_cv58wmD9oR5u370fsWH1I743NdfKoOqijm8';
 var PROVINCES = ['Đắk Lắk', 'Gia Lai', 'Phú Yên', 'Quy Nhơn'];
-var OUTLET_TYPES = ['Đại lý', 'Tạp hóa', 'Siêu thị mini', 'Nhà thuốc', 'Quán ăn/Cà phê (HORECA)', 'Khác'];
+var OUTLET_TYPES = ['Đại lý', 'Tạp hóa', 'Siêu thị mini', 'Nhà thuốc', 'Quán ăn/Cà phê', 'Quán trà sữa', 'Khác'];
 
 /**
  * Chạy 1 lần (chọn hàm buildDashboard, bấm Run) để tạo tab "Dashboard" bằng
