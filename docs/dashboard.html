@@ -45,6 +45,7 @@
   <div id="content" style="display:none">
     <div class="toolbar">
       <select id="fArea"><option value="">Tất cả khu vực</option></select>
+      <select id="fDistrict"><option value="">Tất cả quận/huyện</option></select>
       <select id="fType"><option value="">Tất cả ngành nghề</option></select>
       <select id="fSoftware"><option value="">Tất cả phần mềm</option></select>
       <input id="fRoute" placeholder="🔍 Lọc theo tuyến đường..." style="font-family:inherit;font-size:14px;padding:9px 12px;border-radius:10px;border:1px solid var(--border)">
@@ -118,7 +119,7 @@
         return {
           timestamp: r[0], shop: r[1], type: r[2], software: r[3],
           timeLeft: r[4], area: r[5], note: r[6],
-          lat: parseFloat(r[7]), lng: parseFloat(r[8]), route: r[9] || ''
+          lat: parseFloat(r[7]), lng: parseFloat(r[8]), route: r[9] || '', district: r[10] || ''
         };
       });
     });
@@ -136,10 +137,14 @@
 
   function fillFilterOptions() {
     var areaSel = document.getElementById('fArea');
+    var districtSel = document.getElementById('fDistrict');
     var typeSel = document.getElementById('fType');
     var softSel = document.getElementById('fSoftware');
     uniqueSorted(ALL.map(function (d) { return d.area; })).forEach(function (v) {
       areaSel.appendChild(new Option(v, v));
+    });
+    uniqueSorted(ALL.map(function (d) { return d.district; })).forEach(function (v) {
+      districtSel.appendChild(new Option(v, v));
     });
     uniqueSorted(ALL.map(function (d) { return d.type; })).forEach(function (v) {
       typeSel.appendChild(new Option(v, v));
@@ -147,7 +152,7 @@
     uniqueSorted(ALL.map(function (d) { return d.software; })).forEach(function (v) {
       softSel.appendChild(new Option(v, v));
     });
-    [areaSel, typeSel, softSel].forEach(function (el) {
+    [areaSel, districtSel, typeSel, softSel].forEach(function (el) {
       el.addEventListener('change', render);
     });
     document.getElementById('fRoute').addEventListener('input', render);
@@ -156,6 +161,7 @@
   function currentFilter() {
     return {
       area: document.getElementById('fArea').value,
+      district: document.getElementById('fDistrict').value,
       type: document.getElementById('fType').value,
       software: document.getElementById('fSoftware').value,
       route: document.getElementById('fRoute').value.trim().toLowerCase()
@@ -165,6 +171,7 @@
   function applyFilter(data, f) {
     return data.filter(function (d) {
       return (!f.area || d.area === f.area) &&
+        (!f.district || d.district === f.district) &&
         (!f.type || d.type === f.type) &&
         (!f.software || d.software === f.software) &&
         (!f.route || (d.route || '').toLowerCase().indexOf(f.route) !== -1);
@@ -200,6 +207,7 @@
       else if (d.timeLeft === 'Trên 6 tháng' || d.timeLeft === '3-6 tháng') color = '#16D865';
       var m = L.circleMarker([d.lat, d.lng], { radius: 8, color: '#fff', weight: 2, fillColor: color, fillOpacity: .95 });
       m.bindPopup('<b>' + (d.shop || '') + '</b><br>' + (d.type || '') + ' · ' + (d.area || '') +
+        (d.district ? ' · ' + d.district : '') +
         (d.route ? '<br>Tuyến: ' + d.route : '') +
         '<br>Phần mềm: ' + (d.software || '—') + '<br>Còn lại: ' + (d.timeLeft || '—'));
       markersLayer.addLayer(m);

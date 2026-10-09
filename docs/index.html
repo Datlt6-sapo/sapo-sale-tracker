@@ -73,6 +73,10 @@
   .gps-dot.ready { background:var(--green); animation:none; }
   @keyframes pulse { 0%,100% { opacity:1; transform:scale(1); } 50% { opacity:.35; transform:scale(.65); } }
 
+  .session-bar { display:flex; align-items:center; justify-content:space-between; gap:10px; background:#F3F8FF; border:1px solid #D9E9FF; border-radius:12px; padding:9px 10px 9px 14px; margin-bottom:14px; }
+  .session-bar span { font-size:12.5px; font-weight:700; line-height:1.35; }
+  .session-bar button { width:auto; flex-shrink:0; padding:7px 13px; font-size:12px; font-weight:700; border-radius:10px; background:#fff; border:1.5px solid #D9E9FF; color:var(--blue); box-shadow:none; }
+
   .success-card { text-align:center; }
   .success-card .icon { font-size:52px; margin-bottom:8px; display:inline-block; animation: pop .5s cubic-bezier(.34,1.56,.64,1); }
   @keyframes pop { from { opacity:0; transform:scale(.4) rotate(-12deg); } to { opacity:1; transform:scale(1) rotate(0); } }
@@ -80,14 +84,47 @@
 </head>
 <body>
 
-  <div class="card" id="formCard">
+  <div class="card" id="sessionCard">
+    <h2>🚩 Bắt đầu check-in</h2>
+    <p class="muted">Chọn khu vực & tuyến đường làm việc — chỉ chọn 1 lần, sau đó check-in nhiều cửa hàng liên tiếp mà không cần chọn lại.</p>
+
+    <div class="field">
+      <label>Khu vực</label>
+      <div class="chip-group" id="gSessArea">
+        <div class="chip active" data-v="Đắk Lắk">📍 Đắk Lắk</div>
+        <div class="chip" data-v="Gia Lai">📍 Gia Lai</div>
+        <div class="chip" data-v="Phú Yên">📍 Phú Yên</div>
+        <div class="chip" data-v="Quy Nhơn">📍 Quy Nhơn</div>
+      </div>
+    </div>
+
+    <div class="field">
+      <label>Quận/Huyện</label>
+      <div class="chip-group" id="gSessDistrict"></div>
+    </div>
+
+    <div class="field">
+      <label>Tuyến đường</label>
+      <input id="fSessRoute" list="routeSuggestions" placeholder="VD: Nguyễn Tất Thành" autocomplete="off">
+      <datalist id="routeSuggestions"></datalist>
+    </div>
+
+    <button type="button" class="primary" id="btnStartSession">Bắt đầu check-in →</button>
+    <p style="text-align:center;margin:14px 0 0"><a href="./dashboard.html" style="color:var(--blue);font-size:12.5px;font-weight:600">📊 Xem thống kê & bản đồ độ phủ</a></p>
+  </div>
+
+  <div class="card hidden" id="formCard">
+    <div class="session-bar">
+      <span id="sessSummary"></span>
+      <button type="button" id="btnChangeSession">Đổi</button>
+    </div>
     <h2>📍 Check-in điểm bán</h2>
     <p id="gpsStatus" class="muted"><span class="gps-dot" id="gpsDot"></span><span id="gpsText">Đang lấy vị trí…</span></p>
     <form id="ciForm">
       <div class="field"><label>Tên cửa hàng</label><input id="fShop" required placeholder="VD: Tạp hoá Cô Lan" autocomplete="off"></div>
 
       <div class="section tint-blue">
-        <div class="section-label">🏷️ Loại hình & khu vực</div>
+        <div class="section-label">🏷️ Loại hình</div>
         <div class="field">
           <label>Ngành nghề</label>
           <div class="chip-group" id="gType">
@@ -98,15 +135,6 @@
             <div class="chip" data-v="Quán ăn/Cà phê">☕ Quán ăn/Cà phê</div>
             <div class="chip" data-v="Quán trà sữa">🧋 Quán trà sữa</div>
             <div class="chip" data-v="Khác">✳️ Khác</div>
-          </div>
-        </div>
-        <div class="field">
-          <label>Khu vực</label>
-          <div class="chip-group" id="gArea">
-            <div class="chip active" data-v="Đắk Lắk">📍 Đắk Lắk</div>
-            <div class="chip" data-v="Gia Lai">📍 Gia Lai</div>
-            <div class="chip" data-v="Phú Yên">📍 Phú Yên</div>
-            <div class="chip" data-v="Quy Nhơn">📍 Quy Nhơn</div>
           </div>
         </div>
       </div>
@@ -144,7 +172,6 @@
         </div>
       </div>
 
-      <div class="field"><label>Tuyến đường</label><input id="fRoute" placeholder="VD: Nguyễn Tất Thành" autocomplete="off"></div>
       <div class="field"><label>Ghi chú</label><textarea id="fNote" rows="2" placeholder="Tình hình tại điểm bán..."></textarea></div>
       <button type="submit" class="primary" id="btnSubmit">✓ Check-in ngay</button>
     </form>
@@ -164,14 +191,15 @@
   var API_URL = 'https://script.google.com/macros/s/AKfycbz9b1hdToFKIW2LVts2u4Z8NiNCL1Ri4V7DpoIvVyJ-GvIVHBqmzpvp_oK8QXUYHfiQ8g/exec';
 
   // Nhóm nút chọn nhanh (chip) — 1 chạm chọn, không cần mở dropdown. Trả về hàm
-  // get() để đọc giá trị đang chọn lúc submit.
+  // get() để đọc giá trị đang chọn lúc submit. Luôn truy vấn lại .chip trong
+  // container (không cache danh sách) vì nhóm Quận/Huyện bị render lại động
+  // mỗi khi đổi Khu vực — cache cũ sẽ trỏ tới node đã bị thay thế.
   function wireChipGroup(id) {
     var container = document.getElementById(id);
-    var chips = Array.prototype.slice.call(container.querySelectorAll('.chip'));
     container.addEventListener('click', function (e) {
       var chip = e.target.closest ? e.target.closest('.chip') : null;
-      if (!chip || chips.indexOf(chip) === -1) return;
-      chips.forEach(function (c) { c.classList.remove('active'); });
+      if (!chip || chip.parentNode !== container) return;
+      Array.prototype.forEach.call(container.querySelectorAll('.chip'), function (c) { c.classList.remove('active'); });
       chip.classList.add('active');
     });
     return function () {
@@ -181,9 +209,107 @@
   }
 
   var getType = wireChipGroup('gType');
-  var getArea = wireChipGroup('gArea');
   var getSoftware = wireChipGroup('gSoftware');
   var getTimeLeft = wireChipGroup('gTimeLeft');
+  var getSessArea = wireChipGroup('gSessArea');
+  var getSessDistrict = wireChipGroup('gSessDistrict');
+
+  // ----- Phiên làm việc: Khu vực + Quận/Huyện + Tuyến đường -----
+  // Chọn 1 lần ở đầu buổi, lưu lại để check-in nhiều cửa hàng liên tiếp mà
+  // không phải chọn lại. "Đổi" mở lại màn hình này để chọn tuyến khác (hoặc
+  // đổi cả khu vực/quận huyện nếu cần).
+  var DISTRICTS_BY_AREA = {
+    'Đắk Lắk': ['TP. Buôn Ma Thuột', 'TX. Buôn Hồ', "Ea H'leo", 'Ea Súp', 'Buôn Đôn', "Cư M'gar", 'Krông Búk', 'Krông Năng', 'Ea Kar', "M'Đrắk", 'Krông Bông', 'Krông Pắk', 'Krông Ana', 'Lắk', 'Cư Kuin'],
+    'Gia Lai': ['TP. Pleiku', 'TX. An Khê', 'TX. Ayun Pa', 'KBang', 'Đăk Đoa', 'Chư Păh', 'Ia Grai', 'Mang Yang', 'Kông Chro', 'Đức Cơ', 'Chư Prông', 'Chư Sê', 'Đăk Pơ', 'Ia Pa', 'Krông Pa', 'Phú Thiện', 'Chư Pưh'],
+    'Phú Yên': ['TP. Tuy Hòa', 'TX. Sông Cầu', 'TX. Đông Hòa', 'Đồng Xuân', 'Tuy An', 'Sơn Hòa', 'Sông Hinh', 'Tây Hòa', 'Phú Hòa'],
+    'Quy Nhơn': ['TP. Quy Nhơn', 'TX. An Nhơn', 'TX. Hoài Nhơn', 'Tuy Phước', 'Phù Cát', 'Phù Mỹ', 'Vĩnh Thạnh', 'Tây Sơn', 'Vân Canh', 'An Lão', 'Hoài Ân']
+  };
+
+  var SESSION_KEY = 'ci_session_v1';
+  var ROUTE_HISTORY_KEY = 'ci_route_history_v1';
+
+  function loadSession() {
+    try { return JSON.parse(localStorage.getItem(SESSION_KEY) || 'null'); } catch (e) { return null; }
+  }
+  function saveSession(s) {
+    try { localStorage.setItem(SESSION_KEY, JSON.stringify(s)); } catch (e) {}
+  }
+  function loadRouteHistory() {
+    try { return JSON.parse(localStorage.getItem(ROUTE_HISTORY_KEY) || '[]'); } catch (e) { return []; }
+  }
+  function saveRouteToHistory(district, route) {
+    if (!route) return;
+    var hist = loadRouteHistory().filter(function (h) { return !(h.district === district && h.route === route); });
+    hist.unshift({ district: district, route: route });
+    try { localStorage.setItem(ROUTE_HISTORY_KEY, JSON.stringify(hist.slice(0, 100))); } catch (e) {}
+  }
+  function routeSuggestionsFor(district) {
+    var seen = {}; var out = [];
+    loadRouteHistory().forEach(function (h) {
+      if (h.district === district && !seen[h.route]) { seen[h.route] = true; out.push(h.route); }
+    });
+    return out;
+  }
+  function updateRouteSuggestions() {
+    var list = routeSuggestionsFor(getSessDistrict());
+    document.getElementById('routeSuggestions').innerHTML = list.map(function (r) {
+      return '<option value="' + r.replace(/"/g, '&quot;') + '">';
+    }).join('');
+  }
+  function renderDistrictChips(area, selectedDistrict) {
+    var list = DISTRICTS_BY_AREA[area] || [];
+    document.getElementById('gSessDistrict').innerHTML = list.map(function (d, i) {
+      var active = selectedDistrict ? d === selectedDistrict : i === 0;
+      return '<div class="chip' + (active ? ' active' : '') + '" data-v="' + d.replace(/"/g, '&quot;') + '">' + d + '</div>';
+    }).join('');
+    updateRouteSuggestions();
+  }
+
+  document.getElementById('gSessArea').addEventListener('click', function () {
+    renderDistrictChips(getSessArea());
+  });
+  document.getElementById('gSessDistrict').addEventListener('click', updateRouteSuggestions);
+
+  function showSessionCard(prefill) {
+    if (prefill) {
+      Array.prototype.forEach.call(document.querySelectorAll('#gSessArea .chip'), function (c) {
+        c.classList.toggle('active', c.getAttribute('data-v') === prefill.area);
+      });
+      renderDistrictChips(prefill.area, prefill.district);
+      document.getElementById('fSessRoute').value = prefill.route || '';
+    } else {
+      renderDistrictChips(getSessArea());
+      document.getElementById('fSessRoute').value = '';
+    }
+    document.getElementById('sessionCard').classList.remove('hidden');
+    document.getElementById('formCard').classList.add('hidden');
+    document.getElementById('successCard').classList.add('hidden');
+  }
+
+  function showFormCard() {
+    var s = loadSession();
+    document.getElementById('sessSummary').textContent =
+      '📍 ' + s.area + ' · ' + s.district + (s.route ? ' · ' + s.route : '');
+    document.getElementById('sessionCard').classList.add('hidden');
+    document.getElementById('successCard').classList.add('hidden');
+    document.getElementById('formCard').classList.remove('hidden');
+  }
+
+  document.getElementById('btnStartSession').addEventListener('click', function () {
+    var area = getSessArea();
+    var district = getSessDistrict();
+    var route = document.getElementById('fSessRoute').value.trim();
+    if (!district) { alert('Chọn quận/huyện.'); return; }
+    if (!route) { alert('Nhập tuyến đường.'); return; }
+    saveSession({ area: area, district: district, route: route });
+    saveRouteToHistory(district, route);
+    showFormCard();
+    initGps();
+  });
+
+  document.getElementById('btnChangeSession').addEventListener('click', function () {
+    showSessionCard(loadSession());
+  });
 
   // Chọn "Khác" ở Phần mềm đang dùng thì hiện ô nhập tên phần mềm (bắt buộc
   // điền khi submit); chọn chip khác thì ẩn và xoá ô này đi.
@@ -198,7 +324,7 @@
   // form.reset() chỉ áp dụng cho input/select/textarea gốc, không đụng tới chip —
   // tự đưa mỗi nhóm chip về lựa chọn đầu tiên khi bắt đầu check-in điểm khác.
   function resetChipGroups() {
-    ['gType', 'gArea', 'gSoftware', 'gTimeLeft'].forEach(function (id) {
+    ['gType', 'gSoftware', 'gTimeLeft'].forEach(function (id) {
       var chips = document.getElementById(id).querySelectorAll('.chip');
       Array.prototype.forEach.call(chips, function (c, i) { c.classList.toggle('active', i === 0); });
     });
@@ -226,12 +352,23 @@
       text.textContent = 'Không lấy được vị trí: ' + err.message + ' (vẫn check-in được, chỉ thiếu toạ độ).';
     }, { enableHighAccuracy: true, timeout: 15000 });
   }
-  initGps();
+
+  // Có phiên (khu vực/quận huyện/tuyến đường) từ trước thì vào thẳng form
+  // check-in luôn; chưa có thì bắt chọn trước.
+  if (loadSession()) {
+    showFormCard();
+    initGps();
+  } else {
+    showSessionCard();
+  }
 
   document.getElementById('ciForm').addEventListener('submit', function (e) {
     e.preventDefault();
     var shop = document.getElementById('fShop').value.trim();
     if (!shop) { alert('Nhập tên cửa hàng.'); return; }
+
+    var session = loadSession();
+    if (!session) { alert('Chưa chọn khu vực/tuyến đường.'); showSessionCard(); return; }
 
     var software = getSoftware();
     if (software === 'Khác') {
@@ -248,8 +385,9 @@
     body.set('type', getType());
     body.set('software', software);
     body.set('timeLeft', getTimeLeft());
-    body.set('area', getArea());
-    body.set('route', document.getElementById('fRoute').value.trim());
+    body.set('area', session.area);
+    body.set('district', session.district);
+    body.set('route', session.route);
     body.set('note', document.getElementById('fNote').value);
     body.set('lat', coords ? coords.lat : '');
     body.set('lng', coords ? coords.lng : '');

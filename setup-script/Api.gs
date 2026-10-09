@@ -20,7 +20,8 @@ function doPost(e) {
       p.note || '',
       p.lat || '',
       p.lng || '',
-      p.route || ''
+      p.route || '',
+      p.district || ''
     ]);
     return ContentService.createTextOutput(JSON.stringify({ ok: true }))
       .setMimeType(ContentService.MimeType.JSON);
@@ -34,7 +35,8 @@ function doGet(e) {
   var p = (e && e.parameter) || {};
   if (p.setup === '1') {
     ensureRouteColumn();
-    return ContentService.createTextOutput(JSON.stringify({ ok: true, message: 'Đã kiểm tra/sửa cột Tuyến đường.' }))
+    ensureDistrictColumn();
+    return ContentService.createTextOutput(JSON.stringify({ ok: true, message: 'Đã kiểm tra/sửa cột Tuyến đường + Quận/Huyện.' }))
       .setMimeType(ContentService.MimeType.JSON);
   }
   if (p.cleanTestRows === '1') {
@@ -54,7 +56,7 @@ function cleanTestRows_() {
   var removed = 0;
   for (var r = values.length - 1; r >= 1; r--) {
     var shop = String(values[r][1] || '');
-    if (shop.indexOf('Test Curl Shop') === 0 || shop === 'CORS Test') {
+    if (shop.indexOf('Test Curl Shop') === 0 || shop.indexOf('TestCurlShop') === 0 || shop === 'CORS Test') {
       sheet.deleteRow(r + 1);
       removed++;
     }
@@ -70,4 +72,14 @@ function ensureRouteColumn() {
     sheet.getRange('J1').setValue('Tuyến đường');
   }
   Logger.log('OK: cột J = ' + sheet.getRange('J1').getValue());
+}
+
+/** Thêm cột "Quận/Huyện" (K) vào sheet dữ liệu nếu chưa có — chạy 1 lần. */
+function ensureDistrictColumn() {
+  var sheet = SpreadsheetApp.openById(CHECKIN_SHEET_ID).getSheets()
+    .filter(function (s) { return s.getName() !== 'Dashboard'; })[0];
+  if (sheet.getRange('K1').getValue() !== 'Quận/Huyện') {
+    sheet.getRange('K1').setValue('Quận/Huyện');
+  }
+  Logger.log('OK: cột K = ' + sheet.getRange('K1').getValue());
 }
