@@ -129,16 +129,16 @@
       <div class="section tint-blue">
         <div class="section-label">🏷️ Loại hình</div>
         <div class="field">
-          <label>Ngành nghề</label>
-          <div class="chip-group" id="gType">
-            <div class="chip active" data-v="Đại lý">🏢 Đại lý</div>
-            <div class="chip" data-v="Tạp hóa">🏪 Tạp hóa</div>
-            <div class="chip" data-v="Siêu thị mini">🛒 Siêu thị mini</div>
-            <div class="chip" data-v="Nhà thuốc">💊 Nhà thuốc</div>
-            <div class="chip" data-v="Quán ăn/Cà phê">☕ Quán ăn/Cà phê</div>
-            <div class="chip" data-v="Quán trà sữa">🧋 Quán trà sữa</div>
+          <label>Nhóm ngành</label>
+          <div class="chip-group" id="gTypeGroup">
+            <div class="chip active" data-v="Retail">🏬 Retail</div>
+            <div class="chip" data-v="F&B">🍽️ F&amp;B</div>
             <div class="chip" data-v="Khác">✳️ Khác</div>
           </div>
+        </div>
+        <div class="field" id="fTypeSubField">
+          <label>Ngành nghề cụ thể</label>
+          <div class="chip-group" id="gType"></div>
         </div>
       </div>
 
@@ -211,11 +211,53 @@
     };
   }
 
-  var getType = wireChipGroup('gType');
   var getSoftware = wireChipGroup('gSoftware');
   var getTimeLeft = wireChipGroup('gTimeLeft');
   var getSessArea = wireChipGroup('gSessArea');
   var getSessDistrict = wireChipGroup('gSessDistrict');
+
+  // Ngành nghề chọn 2 bước: nhóm (Retail/F&B/Khác) trước, rồi mới tới ngành
+  // cụ thể trong nhóm đó — giống kiểu Khu vực → Quận/Huyện.
+  var TYPES_BY_GROUP = {
+    'Retail': [
+      { v: 'Đại lý', label: '🏢 Đại lý' },
+      { v: 'Tạp hóa', label: '🏪 Tạp hóa' },
+      { v: 'Siêu thị mini', label: '🛒 Siêu thị mini' },
+      { v: 'Nhà thuốc', label: '💊 Nhà thuốc' }
+    ],
+    'F&B': [
+      { v: 'Quán ăn/Cà phê', label: '☕ Quán ăn/Cà phê' },
+      { v: 'Quán trà sữa', label: '🧋 Quán trà sữa' }
+    ]
+  };
+  var getTypeGroup = wireChipGroup('gTypeGroup');
+  var getTypeSub = wireChipGroup('gType');
+
+  function renderTypeChips(group, selected) {
+    var list = TYPES_BY_GROUP[group] || [];
+    var subField = document.getElementById('fTypeSubField');
+    if (!list.length) {
+      // Nhóm "Khác" không có ngành con — ẩn luôn bước 2.
+      subField.classList.add('hidden');
+      document.getElementById('gType').innerHTML = '';
+      return;
+    }
+    subField.classList.remove('hidden');
+    document.getElementById('gType').innerHTML = list.map(function (t, i) {
+      var active = selected ? t.v === selected : i === 0;
+      return '<div class="chip' + (active ? ' active' : '') + '" data-v="' + t.v.replace(/"/g, '&quot;') + '">' + t.label + '</div>';
+    }).join('');
+  }
+
+  function getType() {
+    var group = getTypeGroup();
+    return group === 'Khác' ? 'Khác' : (getTypeSub() || '');
+  }
+
+  document.getElementById('gTypeGroup').addEventListener('click', function () {
+    renderTypeChips(getTypeGroup());
+  });
+  renderTypeChips(getTypeGroup());
 
   // ----- Phiên làm việc: Khu vực + Quận/Huyện + Tuyến đường -----
   // Chọn 1 lần ở đầu buổi, lưu lại để check-in nhiều cửa hàng liên tiếp mà
@@ -327,10 +369,11 @@
   // form.reset() chỉ áp dụng cho input/select/textarea gốc, không đụng tới chip —
   // tự đưa mỗi nhóm chip về lựa chọn đầu tiên khi bắt đầu check-in điểm khác.
   function resetChipGroups() {
-    ['gType', 'gSoftware', 'gTimeLeft'].forEach(function (id) {
+    ['gTypeGroup', 'gSoftware', 'gTimeLeft'].forEach(function (id) {
       var chips = document.getElementById(id).querySelectorAll('.chip');
       Array.prototype.forEach.call(chips, function (c, i) { c.classList.toggle('active', i === 0); });
     });
+    renderTypeChips(getTypeGroup());
     softwareOtherField.classList.add('hidden');
     softwareOtherInput.value = '';
   }
