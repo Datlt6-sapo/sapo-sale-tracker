@@ -362,19 +362,39 @@
       text.textContent = 'Trình duyệt không hỗ trợ định vị — không thể check-in trên thiết bị này.';
       return;
     }
-    text.textContent = 'Đang lấy vị trí…';
-    navigator.geolocation.getCurrentPosition(function (pos) {
+
+    function onSuccess(pos) {
       coords = { lat: pos.coords.latitude, lng: pos.coords.longitude };
       dot.classList.add('ready');
       text.textContent = 'Vị trí: ' + coords.lat.toFixed(5) + ', ' + coords.lng.toFixed(5);
       setSubmitLockedForGps(false);
-    }, function (err) {
+    }
+
+    function onFail(err) {
       coords = null;
       dot.classList.add('error');
       status.classList.add('error');
-      text.textContent = 'Không lấy được vị trí: ' + err.message + ' — bật định vị rồi bấm Thử lại.';
+      if (err.code === err.PERMISSION_DENIED) {
+        text.textContent = 'Trình duyệt đang chặn quyền vị trí cho trang này — vào Cài đặt máy > (Safari/Chrome) > Vị trí, bật lại cho trang này rồi bấm Thử lại.';
+      } else {
+        text.textContent = 'Không bắt được tín hiệu định vị (' + err.message + ') — ra chỗ thoáng (gần cửa sổ/ngoài trời) rồi bấm Thử lại.';
+      }
       retryBtn.classList.remove('hidden');
-    }, { enableHighAccuracy: true, timeout: 15000 });
+    }
+
+    text.textContent = 'Đang lấy vị trí…';
+    navigator.geolocation.getCurrentPosition(onSuccess, function (err) {
+      // GPS vệ tinh (high accuracy) hay không bắt được tín hiệu khi đứng
+      // trong nhà/cửa hàng — nếu lỗi do mất tín hiệu (không phải do bị chặn
+      // quyền), tự thử lại 1 lần bằng định vị theo mạng (wifi/cell), nhanh
+      // và ổn định hơn trong nhà dù độ chính xác thấp hơn vệ tinh.
+      if (err.code !== err.PERMISSION_DENIED) {
+        text.textContent = 'Chưa bắt được GPS vệ tinh, đang thử định vị theo mạng…';
+        navigator.geolocation.getCurrentPosition(onSuccess, onFail, { enableHighAccuracy: false, timeout: 10000 });
+        return;
+      }
+      onFail(err);
+    }, { enableHighAccuracy: true, timeout: 8000 });
   }
   document.getElementById('btnRetryGps').addEventListener('click', initGps);
 
