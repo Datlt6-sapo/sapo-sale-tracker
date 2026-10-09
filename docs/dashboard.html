@@ -198,28 +198,67 @@
     // Bản đồ
     map.invalidateSize();
     markersLayer.clearLayers();
-    var points = [];
-    data.forEach(function (d) {
-      if (!d.lat || !d.lng || isNaN(d.lat) || isNaN(d.lng)) return;
-      points.push([d.lat, d.lng]);
-      var color = '#007AFF';
-      if (d.timeLeft === 'Dưới 1 tháng') color = '#F5A524';
-      else if (d.timeLeft === 'Trên 6 tháng' || d.timeLeft === '3-6 tháng') color = '#16D865';
-      var m = L.circleMarker([d.lat, d.lng], { radius: 8, color: '#fff', weight: 2, fillColor: color, fillOpacity: .95 });
-      m.bindPopup('<b>' + (d.shop || '') + '</b><br>' + (d.type || '') + ' · ' + (d.area || '') +
-        (d.district ? ' · ' + d.district : '') +
-        (d.route ? '<br>Tuyến: ' + d.route : '') +
-        '<br>Phần mềm: ' + (d.software || '—') + '<br>Còn lại: ' + (d.timeLeft || '—'));
-      markersLayer.addLayer(m);
+    var validPoints = data.filter(function (d) {
+      return d.lat && d.lng && !isNaN(d.lat) && !isNaN(d.lng);
     });
+
     // Zoom bản đồ sát vào đúng các điểm đang hiển thị (theo bộ lọc) thay vì
     // luôn mở ra khung tĩnh cả 4 tỉnh — đỡ phải tự zoom tay mỗi lần vào xem.
     // Không có điểm nào khớp bộ lọc thì mới lùi về khung tổng quan vùng.
-    if (points.length) {
-      map.fitBounds(L.latLngBounds(points), { maxZoom: 15, padding: [40, 40], animate: false });
+    // Phải set khung nhìn TRƯỚC khi gom cụm bên dưới, vì gom cụm cần biết
+    // đúng zoom hiện tại để tính khoảng cách theo pixel.
+    if (validPoints.length) {
+      map.fitBounds(L.latLngBounds(validPoints.map(function (d) { return [d.lat, d.lng]; })), { maxZoom: 15, padding: [40, 40], animate: false });
     } else {
       fitRegion();
     }
+
+    function colorFor(timeLeft) {
+      if (timeLeft === 'Dưới 1 tháng') return '#F5A524';
+      if (timeLeft === 'Trên 6 tháng' || timeLeft === '3-6 tháng') return '#16D865';
+      return '#007AFF';
+    }
+    function popupFor(d) {
+      return '<div style="margin-bottom:4px"><b style="color:' + colorFor(d.timeLeft) + '">●</b> <b>' + (d.shop || '') + '</b><br>' + (d.type || '') + ' · ' + (d.area || '') +
+        (d.district ? ' · ' + d.district : '') +
+        (d.route ? '<br>Tuyến: ' + d.route : '') +
+        '<br>Phần mềm: ' + (d.software || '—') + '<br>Còn lại: ' + (d.timeLeft || '—') + '</div>';
+    }
+
+    // Gom các điểm nằm gần nhau TRÊN MÀN HÌNH (theo pixel ở zoom hiện tại)
+    // thành 1 chấm có số lượng, thay vì chồng khít lên nhau nhìn như chỉ có
+    // 1 điểm — 2 toạ độ GPS lệch vài mét vẫn trông như trùng nhau khi nhìn
+    // xa, nên so khoảng cách theo mét/độ không phản ánh đúng những gì mắt
+    // thấy trên bản đồ.
+    var CLUSTER_PX = 18;
+    var clusters = [];
+    validPoints.forEach(function (d) {
+      var pt = map.latLngToLayerPoint([d.lat, d.lng]);
+      var hit = null;
+      for (var i = 0; i < clusters.length; i++) {
+        if (pt.distanceTo(clusters[i].pixel) < CLUSTER_PX) { hit = clusters[i]; break; }
+      }
+      if (hit) { hit.items.push(d); } else { clusters.push({ pixel: pt, latlng: [d.lat, d.lng], items: [d] }); }
+    });
+
+    clusters.forEach(function (c) {
+      var popupHtml = c.items.map(popupFor).join('<hr style="margin:6px 0;border:none;border-top:1px solid #eee">');
+      if (c.items.length === 1) {
+        var m = L.circleMarker(c.latlng, { radius: 8, color: '#fff', weight: 2, fillColor: colorFor(c.items[0].timeLeft), fillOpacity: .95 });
+        m.bindPopup(popupHtml);
+        markersLayer.addLayer(m);
+      } else {
+        var icon = L.divIcon({
+          className: '',
+          html: '<div style="width:24px;height:24px;border-radius:50%;background:#007AFF;border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.3);color:#fff;font-size:12px;font-weight:700;display:flex;align-items:center;justify-content:center">' + c.items.length + '</div>',
+          iconSize: [24, 24],
+          iconAnchor: [12, 12]
+        });
+        var cm = L.marker(c.latlng, { icon: icon });
+        cm.bindPopup(popupHtml);
+        markersLayer.addLayer(cm);
+      }
+    });
 
     // Biểu đồ theo khu vực
     var byArea = countBy(data, 'area');

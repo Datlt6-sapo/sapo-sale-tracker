@@ -69,9 +69,12 @@
   .hidden { display:none !important; }
 
   #gpsStatus { margin-bottom:14px; display:flex; align-items:center; gap:8px; }
+  #gpsStatus.error { color:var(--red); }
   .gps-dot { width:8px; height:8px; border-radius:50%; background:var(--blue); flex-shrink:0; animation: pulse 1.1s ease-in-out infinite; }
   .gps-dot.ready { background:var(--green); animation:none; }
+  .gps-dot.error { background:var(--red); animation:none; }
   @keyframes pulse { 0%,100% { opacity:1; transform:scale(1); } 50% { opacity:.35; transform:scale(.65); } }
+  #btnRetryGps { width:auto; flex-shrink:0; padding:4px 10px; font-size:11.5px; font-weight:700; border-radius:8px; background:#fff; border:1.5px solid var(--red); color:var(--red); box-shadow:none; }
 
   .session-bar { display:flex; align-items:center; justify-content:space-between; gap:10px; background:#F3F8FF; border:1px solid #D9E9FF; border-radius:12px; padding:9px 10px 9px 14px; margin-bottom:14px; }
   .session-bar span { font-size:12.5px; font-weight:700; line-height:1.35; }
@@ -119,7 +122,7 @@
       <button type="button" id="btnChangeSession">Đổi</button>
     </div>
     <h2>📍 Check-in điểm bán</h2>
-    <p id="gpsStatus" class="muted"><span class="gps-dot" id="gpsDot"></span><span id="gpsText">Đang lấy vị trí…</span></p>
+    <p id="gpsStatus" class="muted"><span class="gps-dot" id="gpsDot"></span><span id="gpsText">Đang lấy vị trí…</span><button type="button" id="btnRetryGps" class="hidden">Thử lại</button></p>
     <form id="ciForm">
       <div class="field"><label>Tên cửa hàng</label><input id="fShop" required placeholder="VD: Tạp hoá Cô Lan" autocomplete="off"></div>
 
@@ -335,11 +338,18 @@
   var coords = null;
 
   function initGps() {
+    var status = document.getElementById('gpsStatus');
     var dot = document.getElementById('gpsDot');
     var text = document.getElementById('gpsText');
-    dot.classList.remove('ready');
+    var retryBtn = document.getElementById('btnRetryGps');
+    dot.classList.remove('ready', 'error');
+    status.classList.remove('error');
+    retryBtn.classList.add('hidden');
     if (!navigator.geolocation) {
-      text.textContent = 'Trình duyệt không hỗ trợ định vị (vẫn check-in được, chỉ thiếu toạ độ).';
+      coords = null;
+      dot.classList.add('error');
+      status.classList.add('error');
+      text.textContent = 'Trình duyệt không hỗ trợ định vị — điểm check-in sẽ không hiện trên bản đồ.';
       return;
     }
     text.textContent = 'Đang lấy vị trí…';
@@ -349,9 +359,13 @@
       text.textContent = 'Vị trí: ' + coords.lat.toFixed(5) + ', ' + coords.lng.toFixed(5);
     }, function (err) {
       coords = null;
-      text.textContent = 'Không lấy được vị trí: ' + err.message + ' (vẫn check-in được, chỉ thiếu toạ độ).';
+      dot.classList.add('error');
+      status.classList.add('error');
+      text.textContent = 'Không lấy được vị trí: ' + err.message + ' — điểm check-in sẽ không hiện trên bản đồ.';
+      retryBtn.classList.remove('hidden');
     }, { enableHighAccuracy: true, timeout: 15000 });
   }
+  document.getElementById('btnRetryGps').addEventListener('click', initGps);
 
   // Có phiên (khu vực/quận huyện/tuyến đường) từ trước thì vào thẳng form
   // check-in luôn; chưa có thì bắt chọn trước.
@@ -369,6 +383,13 @@
 
     var session = loadSession();
     if (!session) { alert('Chưa chọn khu vực/tuyến đường.'); showSessionCard(); return; }
+
+    // Không có toạ độ thì điểm check-in sẽ không hiện trên bản đồ độ phủ —
+    // nhắc rõ để sale biết mà bật định vị lại, thay vì âm thầm mất điểm.
+    if (!coords) {
+      var proceed = confirm('Chưa lấy được vị trí GPS — điểm này sẽ không hiện trên bản đồ độ phủ.\n\nVẫn tiếp tục check-in?');
+      if (!proceed) return;
+    }
 
     var software = getSoftware();
     if (software === 'Khác') {
