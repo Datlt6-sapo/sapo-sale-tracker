@@ -226,13 +226,21 @@
       maxZoom: 19
     }).addTo(map);
     markersLayer = L.layerGroup().addTo(map);
-    // fitBounds ngay lúc khởi tạo tính sai zoom vì container #map chưa có
-    // kích thước ổn định tại thời điểm đó (gây zoom quá sâu hoặc quá xa
-    // tuỳ máy). Đợi 1 frame cho layout ổn định rồi mới ép khung theo đúng
-    // kích thước thật của khung bản đồ trên từng màn hình.
+    // Khung #map rộng và lùn (vd 1000x420, tỉ lệ ~2.4:1) trong khi 4 tỉnh
+    // Tây Nguyên lại là một vùng gần vuông/cao. Nếu dùng fitBounds() thẳng,
+    // Leaflet phải lùi zoom ra để vừa chiều CAO của vùng, kéo theo chiều
+    // RỘNG hiển thị dư ra rất nhiều (lọt cả Campuchia/Thái Lan vào khung).
+    // Nên tự tính zoom chỉ theo chiều NGANG của khung bản đồ, chấp nhận có
+    // thể hơi hụt phía trên/dưới — ưu tiên khung nhìn gọn đúng khu vực.
     requestAnimationFrame(function () {
       map.invalidateSize();
-      map.fitBounds(REGION_BOUNDS);
+      var bounds = L.latLngBounds(REGION_BOUNDS);
+      var size = map.getSize();
+      var nw = map.project(bounds.getNorthWest(), 0);
+      var se = map.project(bounds.getSouthEast(), 0);
+      var boundsWidthPx = Math.abs(se.x - nw.x);
+      var zoom = Math.floor(Math.log(size.x / boundsWidthPx) / Math.LN2);
+      map.setView(bounds.getCenter(), zoom, { animate: false });
     });
   }
 
