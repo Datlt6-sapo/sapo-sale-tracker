@@ -219,11 +219,10 @@
 
   function initMap() {
     map = L.map('map', { maxBounds: REGION_BOUNDS, maxBoundsViscosity: .8, minZoom: 7 }).fitBounds(REGION_BOUNDS);
-    // Dùng CartoDB thay vì tile.openstreetmap.org trực tiếp — nhiều mạng công ty
-    // chặn domain openstreetmap.org nhưng không chặn cartocdn.com.
-    L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
-      attribution: '&copy; OpenStreetMap &copy; CARTO',
-      subdomains: 'abcd',
+    // OpenStreetMap trực tiếp bị chặn mạng, CartoDB giờ bắt buộc API key —
+    // dùng Esri World Street Map (miễn phí, không cần key).
+    L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}', {
+      attribution: 'Tiles &copy; Esri',
       maxZoom: 19
     }).addTo(map);
     markersLayer = L.layerGroup().addTo(map);
