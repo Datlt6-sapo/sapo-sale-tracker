@@ -189,9 +189,12 @@
     document.getElementById('kpiAreas').textContent = uniqueSorted(data.map(function (d) { return d.area; })).length;
 
     // Bản đồ
+    map.invalidateSize();
     markersLayer.clearLayers();
+    var points = [];
     data.forEach(function (d) {
       if (!d.lat || !d.lng || isNaN(d.lat) || isNaN(d.lng)) return;
+      points.push([d.lat, d.lng]);
       var color = '#007AFF';
       if (d.timeLeft === 'Dưới 1 tháng') color = '#F5A524';
       else if (d.timeLeft === 'Trên 6 tháng' || d.timeLeft === '3-6 tháng') color = '#16D865';
@@ -201,6 +204,14 @@
         '<br>Phần mềm: ' + (d.software || '—') + '<br>Còn lại: ' + (d.timeLeft || '—'));
       markersLayer.addLayer(m);
     });
+    // Zoom bản đồ sát vào đúng các điểm đang hiển thị (theo bộ lọc) thay vì
+    // luôn mở ra khung tĩnh cả 4 tỉnh — đỡ phải tự zoom tay mỗi lần vào xem.
+    // Không có điểm nào khớp bộ lọc thì mới lùi về khung tổng quan vùng.
+    if (points.length) {
+      map.fitBounds(L.latLngBounds(points), { maxZoom: 15, padding: [40, 40], animate: false });
+    } else {
+      fitRegion();
+    }
 
     // Biểu đồ theo khu vực
     var byArea = countBy(data, 'area');
@@ -226,22 +237,23 @@
       maxZoom: 19
     }).addTo(map);
     markersLayer = L.layerGroup().addTo(map);
-    // Khung #map rộng và lùn (vd 1000x420, tỉ lệ ~2.4:1) trong khi 4 tỉnh
-    // Tây Nguyên lại là một vùng gần vuông/cao. Nếu dùng fitBounds() thẳng,
-    // Leaflet phải lùi zoom ra để vừa chiều CAO của vùng, kéo theo chiều
-    // RỘNG hiển thị dư ra rất nhiều (lọt cả Campuchia/Thái Lan vào khung).
-    // Nên tự tính zoom chỉ theo chiều NGANG của khung bản đồ, chấp nhận có
-    // thể hơi hụt phía trên/dưới — ưu tiên khung nhìn gọn đúng khu vực.
-    requestAnimationFrame(function () {
-      map.invalidateSize();
-      var bounds = L.latLngBounds(REGION_BOUNDS);
-      var size = map.getSize();
-      var nw = map.project(bounds.getNorthWest(), 0);
-      var se = map.project(bounds.getSouthEast(), 0);
-      var boundsWidthPx = Math.abs(se.x - nw.x);
-      var zoom = Math.floor(Math.log(size.x / boundsWidthPx) / Math.LN2);
-      map.setView(bounds.getCenter(), zoom, { animate: false });
-    });
+  }
+
+  // Khung tổng quan cả 4 tỉnh — chỉ dùng khi không có điểm check-in nào để
+  // zoom theo (vd bộ lọc không khớp dữ liệu nào). Khung #map rộng và lùn
+  // (vd 1000x420, tỉ lệ ~2.4:1) trong khi 4 tỉnh lại là vùng gần vuông/cao,
+  // nên nếu dùng fitBounds() thẳng vào REGION_BOUNDS, Leaflet phải lùi zoom
+  // ra để vừa chiều CAO, kéo theo chiều RỘNG dư ra rất nhiều (lọt cả
+  // Campuchia/Thái Lan vào khung). Tự tính zoom theo riêng chiều NGANG để
+  // khung nhìn gọn hơn.
+  function fitRegion() {
+    var bounds = L.latLngBounds(REGION_BOUNDS);
+    var size = map.getSize();
+    var nw = map.project(bounds.getNorthWest(), 0);
+    var se = map.project(bounds.getSouthEast(), 0);
+    var boundsWidthPx = Math.abs(se.x - nw.x);
+    var zoom = Math.floor(Math.log(size.x / boundsWidthPx) / Math.LN2);
+    map.setView(bounds.getCenter(), zoom, { animate: false });
   }
 
   function initCharts() {
