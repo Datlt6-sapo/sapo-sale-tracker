@@ -337,6 +337,15 @@
 
   var coords = null;
 
+  // Bắt buộc phải có toạ độ GPS mới cho check-in — nếu không, điểm đó sẽ
+  // vĩnh viễn không lên được bản đồ độ phủ mà không ai biết. Khoá nút Check-in
+  // lại cho tới khi lấy được vị trí (hoặc bấm Thử lại sau khi bật định vị).
+  function setSubmitLockedForGps(locked) {
+    var btn = document.getElementById('btnSubmit');
+    btn.disabled = locked;
+    btn.textContent = locked ? '📍 Cần bật định vị để check-in' : '✓ Check-in ngay';
+  }
+
   function initGps() {
     var status = document.getElementById('gpsStatus');
     var dot = document.getElementById('gpsDot');
@@ -345,11 +354,12 @@
     dot.classList.remove('ready', 'error');
     status.classList.remove('error');
     retryBtn.classList.add('hidden');
+    setSubmitLockedForGps(true);
     if (!navigator.geolocation) {
       coords = null;
       dot.classList.add('error');
       status.classList.add('error');
-      text.textContent = 'Trình duyệt không hỗ trợ định vị — điểm check-in sẽ không hiện trên bản đồ.';
+      text.textContent = 'Trình duyệt không hỗ trợ định vị — không thể check-in trên thiết bị này.';
       return;
     }
     text.textContent = 'Đang lấy vị trí…';
@@ -357,11 +367,12 @@
       coords = { lat: pos.coords.latitude, lng: pos.coords.longitude };
       dot.classList.add('ready');
       text.textContent = 'Vị trí: ' + coords.lat.toFixed(5) + ', ' + coords.lng.toFixed(5);
+      setSubmitLockedForGps(false);
     }, function (err) {
       coords = null;
       dot.classList.add('error');
       status.classList.add('error');
-      text.textContent = 'Không lấy được vị trí: ' + err.message + ' — điểm check-in sẽ không hiện trên bản đồ.';
+      text.textContent = 'Không lấy được vị trí: ' + err.message + ' — bật định vị rồi bấm Thử lại.';
       retryBtn.classList.remove('hidden');
     }, { enableHighAccuracy: true, timeout: 15000 });
   }
@@ -384,12 +395,9 @@
     var session = loadSession();
     if (!session) { alert('Chưa chọn khu vực/tuyến đường.'); showSessionCard(); return; }
 
-    // Không có toạ độ thì điểm check-in sẽ không hiện trên bản đồ độ phủ —
-    // nhắc rõ để sale biết mà bật định vị lại, thay vì âm thầm mất điểm.
-    if (!coords) {
-      var proceed = confirm('Chưa lấy được vị trí GPS — điểm này sẽ không hiện trên bản đồ độ phủ.\n\nVẫn tiếp tục check-in?');
-      if (!proceed) return;
-    }
+    // Nút Check-in đã bị khoá tới khi có GPS (setSubmitLockedForGps), đây chỉ
+    // là lớp chặn dự phòng nếu lỡ submit được bằng cách khác (vd Enter).
+    if (!coords) { alert('Chưa lấy được vị trí GPS — bật định vị rồi bấm Thử lại.'); return; }
 
     var software = getSoftware();
     if (software === 'Khác') {
