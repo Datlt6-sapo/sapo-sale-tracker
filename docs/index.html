@@ -120,11 +120,17 @@
             <div class="chip" data-v="Sapo">Sapo</div>
             <div class="chip" data-v="Haravan">Haravan</div>
             <div class="chip" data-v="POS365">POS365</div>
-            <div class="chip" data-v="Ohana POS">Ohana POS</div>
+            <div class="chip" data-v="CukCuk">CukCuk</div>
+            <div class="chip" data-v="MISA">MISA</div>
+            <div class="chip" data-v="Ocha">Ocha</div>
             <div class="chip" data-v="Sổ tay/Excel">Sổ tay/Excel</div>
             <div class="chip" data-v="Chưa dùng phần mềm">Chưa dùng</div>
             <div class="chip" data-v="Khác">Khác</div>
           </div>
+        </div>
+        <div class="field hidden" id="fSoftwareOtherField">
+          <label>Tên phần mềm khác</label>
+          <input id="fSoftwareOther" placeholder="Nhập tên phần mềm đang dùng" autocomplete="off">
         </div>
         <div class="field">
           <label>Thời gian còn lại</label>
@@ -179,6 +185,16 @@
   var getSoftware = wireChipGroup('gSoftware');
   var getTimeLeft = wireChipGroup('gTimeLeft');
 
+  // Chọn "Khác" ở Phần mềm đang dùng thì hiện ô nhập tên phần mềm (bắt buộc
+  // điền khi submit); chọn chip khác thì ẩn và xoá ô này đi.
+  var softwareOtherField = document.getElementById('fSoftwareOtherField');
+  var softwareOtherInput = document.getElementById('fSoftwareOther');
+  document.getElementById('gSoftware').addEventListener('click', function () {
+    var isOther = getSoftware() === 'Khác';
+    softwareOtherField.classList.toggle('hidden', !isOther);
+    if (!isOther) softwareOtherInput.value = '';
+  });
+
   // form.reset() chỉ áp dụng cho input/select/textarea gốc, không đụng tới chip —
   // tự đưa mỗi nhóm chip về lựa chọn đầu tiên khi bắt đầu check-in điểm khác.
   function resetChipGroups() {
@@ -186,6 +202,8 @@
       var chips = document.getElementById(id).querySelectorAll('.chip');
       Array.prototype.forEach.call(chips, function (c, i) { c.classList.toggle('active', i === 0); });
     });
+    softwareOtherField.classList.add('hidden');
+    softwareOtherInput.value = '';
   }
 
   var coords = null;
@@ -215,6 +233,12 @@
     var shop = document.getElementById('fShop').value.trim();
     if (!shop) { alert('Nhập tên cửa hàng.'); return; }
 
+    var software = getSoftware();
+    if (software === 'Khác') {
+      software = softwareOtherInput.value.trim();
+      if (!software) { alert('Nhập tên phần mềm đang dùng.'); return; }
+    }
+
     var btn = document.getElementById('btnSubmit');
     btn.disabled = true;
     btn.textContent = 'Đang lưu…';
@@ -222,7 +246,7 @@
     var body = new URLSearchParams();
     body.set('shop', shop);
     body.set('type', getType());
-    body.set('software', getSoftware());
+    body.set('software', software);
     body.set('timeLeft', getTimeLeft());
     body.set('area', getArea());
     body.set('route', document.getElementById('fRoute').value.trim());
