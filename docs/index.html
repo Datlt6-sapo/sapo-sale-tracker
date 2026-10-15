@@ -88,19 +88,20 @@
 </head>
 <body>
 
-  <div class="card" id="sessionCard">
+  <div class="card" id="loginCard">
+    <h2>👋 Đăng nhập</h2>
+    <p class="muted">Nhập email Sapo của bạn — chỉ cần đăng nhập 1 lần, các lần check-in sau sẽ tự nhớ tài khoản.</p>
+    <div class="field">
+      <label>Email Sapo</label>
+      <input id="fLoginEmail" type="email" placeholder="ten@sapo.vn" autocomplete="username" autocapitalize="off">
+    </div>
+    <p class="muted" id="loginError" style="color:var(--red);display:none"></p>
+    <button type="button" class="primary" id="btnLogin">Đăng nhập →</button>
+  </div>
+
+  <div class="card hidden" id="sessionCard">
     <h2>🚩 Bắt đầu check-in</h2>
     <p class="muted">Chọn khu vực & tuyến đường làm việc — chỉ chọn 1 lần, sau đó check-in nhiều cửa hàng liên tiếp mà không cần chọn lại.</p>
-
-    <div class="field">
-      <label>Tên nhân viên</label>
-      <div class="chip-group" id="gSessStaff">
-        <div class="chip active" data-v="Nguyễn Bảo Toàn">Nguyễn Bảo Toàn</div>
-        <div class="chip" data-v="Trương Minh Hiếu">Trương Minh Hiếu</div>
-        <div class="chip" data-v="Nguyễn Lưu Hảo">Nguyễn Lưu Hảo</div>
-        <div class="chip" data-v="Bùi Quang Nhơn">Bùi Quang Nhơn</div>
-      </div>
-    </div>
 
     <div class="field">
       <label>Khu vực</label>
@@ -132,6 +133,7 @@
       <span id="sessSummary"></span>
       <button type="button" id="btnChangeSession">Đổi</button>
     </div>
+    <p style="text-align:right;margin:-8px 0 14px"><a href="#" id="linkSwitchAccount" style="color:var(--muted);font-size:11.5px">Không phải bạn? Đổi tài khoản</a></p>
     <h2>📍 Check-in điểm bán</h2>
     <p id="gpsStatus" class="muted"><span class="gps-dot" id="gpsDot"></span><span id="gpsText">Đang lấy vị trí…</span><button type="button" id="btnRetryGps" class="hidden">Thử lại</button></p>
     <form id="ciForm">
@@ -248,7 +250,6 @@
   var getTimeLeft = wireChipGroup('gTimeLeft');
   var getMeetResult = wireChipGroup('gMeetResult');
   var getInterest = wireChipGroup('gInterest');
-  var getSessStaff = wireChipGroup('gSessStaff');
   var getSessArea = wireChipGroup('gSessArea');
   var getSessDistrict = wireChipGroup('gSessDistrict');
 
@@ -298,6 +299,57 @@
     renderTypeChips(getTypeGroup());
   });
   renderTypeChips(getTypeGroup());
+
+  // ----- Đăng nhập: email Sapo -> tên nhân viên -----
+  // Chỉ kiểm tra email có khớp danh sách nội bộ hay không, không phải OAuth
+  // thật (dự án này từng gặp đúng vấn đề OAuth không ổn định trên mobile khi
+  // dùng Google Sign-In/Firebase Auth nên chủ động tránh làm lại). Đăng nhập
+  // 1 lần, lưu vào localStorage để các lần mở app sau tự nhận ra.
+  var STAFF_BY_EMAIL = {
+    'toannb@sapo.vn': 'Nguyễn Bảo Toàn',
+    'haonl@sapo.vn': 'Nguyễn Lưu Hảo',
+    'nhonbq@sapo.vn': 'Bùi Quang Nhơn',
+    'hieutm2@sapo.vn': 'Trương Minh Hiếu'
+  };
+  var IDENTITY_KEY = 'ci_identity_v1';
+
+  function loadIdentity() {
+    try { return JSON.parse(localStorage.getItem(IDENTITY_KEY) || 'null'); } catch (e) { return null; }
+  }
+  function saveIdentity(idn) {
+    try { localStorage.setItem(IDENTITY_KEY, JSON.stringify(idn)); } catch (e) {}
+  }
+  function clearIdentity() {
+    try { localStorage.removeItem(IDENTITY_KEY); } catch (e) {}
+  }
+
+  function showLoginCard() {
+    document.getElementById('loginCard').classList.remove('hidden');
+    document.getElementById('sessionCard').classList.add('hidden');
+    document.getElementById('formCard').classList.add('hidden');
+    document.getElementById('successCard').classList.add('hidden');
+  }
+
+  document.getElementById('btnLogin').addEventListener('click', function () {
+    var email = document.getElementById('fLoginEmail').value.trim().toLowerCase();
+    var errEl = document.getElementById('loginError');
+    var name = STAFF_BY_EMAIL[email];
+    if (!name) {
+      errEl.textContent = 'Email không có trong danh sách nhân viên — liên hệ quản lý để được thêm vào.';
+      errEl.style.display = 'block';
+      return;
+    }
+    errEl.style.display = 'none';
+    saveIdentity({ email: email, name: name });
+    if (loadSession()) { showFormCard(); initGps(); } else { showSessionCard(); }
+  });
+
+  document.getElementById('linkSwitchAccount').addEventListener('click', function (e) {
+    e.preventDefault();
+    clearIdentity();
+    document.getElementById('fLoginEmail').value = '';
+    showLoginCard();
+  });
 
   // ----- Phiên làm việc: Khu vực + Quận/Huyện + Tuyến đường -----
   // Chọn 1 lần ở đầu buổi, lưu lại để check-in nhiều cửa hàng liên tiếp mà
@@ -356,10 +408,8 @@
   document.getElementById('gSessDistrict').addEventListener('click', updateRouteSuggestions);
 
   function showSessionCard(prefill) {
+    document.getElementById('loginCard').classList.add('hidden');
     if (prefill) {
-      Array.prototype.forEach.call(document.querySelectorAll('#gSessStaff .chip'), function (c) {
-        c.classList.toggle('active', c.getAttribute('data-v') === prefill.staff);
-      });
       Array.prototype.forEach.call(document.querySelectorAll('#gSessArea .chip'), function (c) {
         c.classList.toggle('active', c.getAttribute('data-v') === prefill.area);
       });
@@ -375,22 +425,23 @@
   }
 
   function showFormCard() {
+    var idn = loadIdentity();
     var s = loadSession();
     document.getElementById('sessSummary').textContent =
-      '🧑‍💼 ' + s.staff + ' · 📍 ' + s.area + ' · ' + s.district + (s.route ? ' · ' + s.route : '');
+      '🧑‍💼 ' + idn.name + ' · 📍 ' + s.area + ' · ' + s.district + (s.route ? ' · ' + s.route : '');
+    document.getElementById('loginCard').classList.add('hidden');
     document.getElementById('sessionCard').classList.add('hidden');
     document.getElementById('successCard').classList.add('hidden');
     document.getElementById('formCard').classList.remove('hidden');
   }
 
   document.getElementById('btnStartSession').addEventListener('click', function () {
-    var staff = getSessStaff();
     var area = getSessArea();
     var district = getSessDistrict();
     var route = document.getElementById('fSessRoute').value.trim();
     if (!district) { alert('Chọn quận/huyện.'); return; }
     if (!route) { alert('Nhập tuyến đường.'); return; }
-    saveSession({ staff: staff, area: area, district: district, route: route });
+    saveSession({ area: area, district: district, route: route });
     saveRouteToHistory(district, route);
     showFormCard();
     initGps();
@@ -485,9 +536,12 @@
   }
   document.getElementById('btnRetryGps').addEventListener('click', initGps);
 
-  // Có phiên (khu vực/quận huyện/tuyến đường) từ trước thì vào thẳng form
-  // check-in luôn; chưa có thì bắt chọn trước.
-  if (loadSession()) {
+  // Chưa đăng nhập thì bắt đăng nhập trước tiên. Đã đăng nhập + có phiên
+  // (khu vực/quận huyện/tuyến đường) từ trước thì vào thẳng form check-in
+  // luôn; đã đăng nhập nhưng chưa có phiên thì bắt chọn khu vực/tuyến trước.
+  if (!loadIdentity()) {
+    showLoginCard();
+  } else if (loadSession()) {
     showFormCard();
     initGps();
   } else {
@@ -498,6 +552,9 @@
     e.preventDefault();
     var shop = document.getElementById('fShop').value.trim();
     if (!shop) { alert('Nhập tên cửa hàng.'); return; }
+
+    var identity = loadIdentity();
+    if (!identity) { alert('Chưa đăng nhập.'); showLoginCard(); return; }
 
     var session = loadSession();
     if (!session) { alert('Chưa chọn khu vực/tuyến đường.'); showSessionCard(); return; }
@@ -521,7 +578,7 @@
     body.set('type', getType());
     body.set('software', software);
     body.set('timeLeft', getTimeLeft());
-    body.set('staff', session.staff);
+    body.set('staff', identity.name);
     body.set('area', session.area);
     body.set('district', session.district);
     body.set('route', session.route);
