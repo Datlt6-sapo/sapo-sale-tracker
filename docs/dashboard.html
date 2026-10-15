@@ -23,7 +23,7 @@
   .kpi .value { font-size:22px; font-weight:700; }
   .card { background:#fff; border:1px solid var(--border); border-radius:16px; padding:16px; margin-bottom:16px; box-shadow:0 2px 10px rgba(20,24,26,.04); }
   .card h2 { font-size:14px; margin:0 0 12px; }
-  #map { height:420px; border-radius:12px; overflow:hidden; }
+  #map, #routeMap { height:420px; border-radius:12px; overflow:hidden; }
   .chart-row { display:grid; grid-template-columns:1fr 1fr; gap:16px; }
   @media (max-width:720px) { .chart-row { grid-template-columns:1fr; } }
   canvas { max-height:260px; }
@@ -48,6 +48,7 @@
       <select id="fDistrict"><option value="">Tất cả quận/huyện</option></select>
       <select id="fType"><option value="">Tất cả ngành nghề</option></select>
       <select id="fSoftware"><option value="">Tất cả phần mềm</option></select>
+      <select id="fInterest"><option value="">Tất cả mức độ quan tâm</option></select>
       <input id="fRoute" placeholder="🔍 Lọc theo tuyến đường..." style="font-family:inherit;font-size:14px;padding:9px 12px;border-radius:10px;border:1px solid var(--border)">
     </div>
 
@@ -76,6 +77,16 @@
         <h2>Theo ngành nghề</h2>
         <canvas id="chartType"></canvas>
       </div>
+    </div>
+
+    <div class="card">
+      <h2>🧭 Lộ trình đi tuyến theo nhân viên</h2>
+      <div class="toolbar" style="margin-top:0">
+        <select id="rrStaff"></select>
+        <input id="rrDate" type="date">
+      </div>
+      <p class="muted" id="rrSummary" style="margin:0 0 10px"></p>
+      <div id="routeMap"></div>
     </div>
   </div>
 </div>
@@ -119,7 +130,9 @@
         return {
           timestamp: r[0], shop: r[1], type: r[2], software: r[3],
           timeLeft: r[4], area: r[5], note: r[6],
-          lat: parseFloat(r[7]), lng: parseFloat(r[8]), route: r[9] || '', district: r[10] || ''
+          lat: parseFloat(r[7]), lng: parseFloat(r[8]), route: r[9] || '', district: r[10] || '',
+          meetResult: r[11] || '', interest: r[12] || '', contactName: r[13] || '', contactPhone: r[14] || '',
+          staff: r[15] || ''
         };
       });
     });
@@ -140,6 +153,7 @@
     var districtSel = document.getElementById('fDistrict');
     var typeSel = document.getElementById('fType');
     var softSel = document.getElementById('fSoftware');
+    var interestSel = document.getElementById('fInterest');
     uniqueSorted(ALL.map(function (d) { return d.area; })).forEach(function (v) {
       areaSel.appendChild(new Option(v, v));
     });
@@ -152,7 +166,10 @@
     uniqueSorted(ALL.map(function (d) { return d.software; })).forEach(function (v) {
       softSel.appendChild(new Option(v, v));
     });
-    [areaSel, districtSel, typeSel, softSel].forEach(function (el) {
+    uniqueSorted(ALL.map(function (d) { return d.interest; })).forEach(function (v) {
+      interestSel.appendChild(new Option(v, v));
+    });
+    [areaSel, districtSel, typeSel, softSel, interestSel].forEach(function (el) {
       el.addEventListener('change', render);
     });
     document.getElementById('fRoute').addEventListener('input', render);
@@ -164,6 +181,7 @@
       district: document.getElementById('fDistrict').value,
       type: document.getElementById('fType').value,
       software: document.getElementById('fSoftware').value,
+      interest: document.getElementById('fInterest').value,
       route: document.getElementById('fRoute').value.trim().toLowerCase()
     };
   }
@@ -172,6 +190,7 @@
     return data.filter(function (d) {
       return (!f.area || d.area === f.area) &&
         (!f.district || d.district === f.district) &&
+        (!f.interest || d.interest === f.interest) &&
         (!f.type || d.type === f.type) &&
         (!f.software || d.software === f.software) &&
         (!f.route || (d.route || '').toLowerCase().indexOf(f.route) !== -1);
@@ -210,7 +229,7 @@
     if (validPoints.length) {
       map.fitBounds(L.latLngBounds(validPoints.map(function (d) { return [d.lat, d.lng]; })), { maxZoom: 15, padding: [40, 40], animate: false });
     } else {
-      fitRegion();
+      fitRegion(map);
     }
 
     function colorFor(timeLeft) {
@@ -219,10 +238,14 @@
       return '#007AFF';
     }
     function popupFor(d) {
+      var contact = [d.contactName, d.contactPhone].filter(Boolean).join(' · ');
       return '<div style="margin-bottom:4px"><b style="color:' + colorFor(d.timeLeft) + '">●</b> <b>' + (d.shop || '') + '</b><br>' + (d.type || '') + ' · ' + (d.area || '') +
         (d.district ? ' · ' + d.district : '') +
         (d.route ? '<br>Tuyến: ' + d.route : '') +
-        '<br>Phần mềm: ' + (d.software || '—') + '<br>Còn lại: ' + (d.timeLeft || '—') + '</div>';
+        '<br>Phần mềm: ' + (d.software || '—') + '<br>Còn lại: ' + (d.timeLeft || '—') +
+        (d.meetResult ? '<br>Kết quả gặp: ' + d.meetResult : '') +
+        (d.interest ? '<br>Quan tâm: ' + d.interest : '') +
+        (contact ? '<br>Liên hệ: ' + contact : '') + '</div>';
     }
 
     // Gom các điểm nằm gần nhau TRÊN MÀN HÌNH (theo pixel ở zoom hiện tại)
@@ -293,14 +316,115 @@
   // ra để vừa chiều CAO, kéo theo chiều RỘNG dư ra rất nhiều (lọt cả
   // Campuchia/Thái Lan vào khung). Tự tính zoom theo riêng chiều NGANG để
   // khung nhìn gọn hơn.
-  function fitRegion() {
+  function fitRegion(targetMap) {
     var bounds = L.latLngBounds(REGION_BOUNDS);
-    var size = map.getSize();
-    var nw = map.project(bounds.getNorthWest(), 0);
-    var se = map.project(bounds.getSouthEast(), 0);
+    var size = targetMap.getSize();
+    var nw = targetMap.project(bounds.getNorthWest(), 0);
+    var se = targetMap.project(bounds.getSouthEast(), 0);
     var boundsWidthPx = Math.abs(se.x - nw.x);
     var zoom = Math.floor(Math.log(size.x / boundsWidthPx) / Math.LN2);
-    map.setView(bounds.getCenter(), zoom, { animate: false });
+    targetMap.setView(bounds.getCenter(), zoom, { animate: false });
+  }
+
+  var routeMap, routeLayer;
+
+  function initRouteMap() {
+    routeMap = L.map('routeMap', { maxBounds: REGION_BOUNDS, maxBoundsViscosity: .8, minZoom: 7 }).setView([13.35, 108.4], 7);
+    L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}', {
+      attribution: 'Tiles &copy; Esri',
+      maxZoom: 19
+    }).addTo(routeMap);
+    routeLayer = L.layerGroup().addTo(routeMap);
+  }
+
+  function pad2(n) { return (n < 10 ? '0' : '') + n; }
+
+  // "M/D/YYYY h:mm:ss" (định dạng xuất CSV của Sheets) -> "YYYY-MM-DD", để so
+  // sánh với giá trị input[type=date]. new Date(str) hiểu đúng định dạng này
+  // trên mọi trình duyệt chính, không cần tự parse tay.
+  function toDateInputValue(dt) {
+    if (isNaN(dt.getTime())) return '';
+    return dt.getFullYear() + '-' + pad2(dt.getMonth() + 1) + '-' + pad2(dt.getDate());
+  }
+
+  function fmtTime(dt) {
+    return isNaN(dt.getTime()) ? '?' : pad2(dt.getHours()) + ':' + pad2(dt.getMinutes());
+  }
+
+  // Khoảng cách 2 điểm GPS (km) theo công thức Haversine — ước tính tổng
+  // quãng đường đã đi trong lộ trình 1 ngày của 1 nhân viên.
+  function haversineKm(a, b) {
+    var R = 6371;
+    var dLat = (b[0] - a[0]) * Math.PI / 180;
+    var dLng = (b[1] - a[1]) * Math.PI / 180;
+    var la1 = a[0] * Math.PI / 180, la2 = b[0] * Math.PI / 180;
+    var h = Math.pow(Math.sin(dLat / 2), 2) + Math.cos(la1) * Math.cos(la2) * Math.pow(Math.sin(dLng / 2), 2);
+    return R * 2 * Math.atan2(Math.sqrt(h), Math.sqrt(1 - h));
+  }
+
+  // Mặc định chọn ngày gần nhất có dữ liệu của nhân viên đang chọn, thay vì
+  // luôn để hôm nay (thường trống nếu đang xem lại dữ liệu cũ).
+  function setDefaultRouteDate() {
+    var staff = document.getElementById('rrStaff').value;
+    var dates = ALL.filter(function (d) { return d.staff === staff && d.timestamp; })
+      .map(function (d) { return toDateInputValue(new Date(d.timestamp)); })
+      .filter(Boolean)
+      .sort();
+    document.getElementById('rrDate').value = dates.length ? dates[dates.length - 1] : toDateInputValue(new Date());
+  }
+
+  function fillRouteReplayOptions() {
+    var staffSel = document.getElementById('rrStaff');
+    uniqueSorted(ALL.map(function (d) { return d.staff; })).forEach(function (v) {
+      staffSel.appendChild(new Option(v, v));
+    });
+    staffSel.addEventListener('change', function () { setDefaultRouteDate(); renderRouteReplay(); });
+    document.getElementById('rrDate').addEventListener('change', renderRouteReplay);
+    setDefaultRouteDate();
+  }
+
+  function renderRouteReplay() {
+    routeMap.invalidateSize();
+    routeLayer.clearLayers();
+    var staff = document.getElementById('rrStaff').value;
+    var dateStr = document.getElementById('rrDate').value;
+    var summary = document.getElementById('rrSummary');
+
+    var points = ALL.filter(function (d) {
+      if (d.staff !== staff || !d.lat || !d.lng || isNaN(d.lat) || isNaN(d.lng)) return false;
+      return toDateInputValue(new Date(d.timestamp)) === dateStr;
+    }).sort(function (a, b) { return new Date(a.timestamp) - new Date(b.timestamp); });
+
+    if (!points.length) {
+      summary.textContent = 'Không có lượt check-in nào có toạ độ trong ngày này.';
+      fitRegion(routeMap);
+      return;
+    }
+
+    var latlngs = points.map(function (d) { return [d.lat, d.lng]; });
+    L.polyline(latlngs, { color: '#7C3AED', weight: 3, opacity: .8, dashArray: '6 6' }).addTo(routeLayer);
+
+    points.forEach(function (d, i) {
+      var icon = L.divIcon({
+        className: '',
+        html: '<div style="width:24px;height:24px;border-radius:50%;background:#7C3AED;border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.3);color:#fff;font-size:12px;font-weight:700;display:flex;align-items:center;justify-content:center">' + (i + 1) + '</div>',
+        iconSize: [24, 24],
+        iconAnchor: [12, 12]
+      });
+      var timeStr = fmtTime(new Date(d.timestamp));
+      var m = L.marker([d.lat, d.lng], { icon: icon });
+      m.bindPopup('<b>' + (i + 1) + '. ' + (d.shop || '') + '</b>' + (timeStr !== '?' ? ' — ' + timeStr : '') +
+        '<br>' + (d.type || '') + (d.route ? '<br>Tuyến: ' + d.route : '') +
+        (d.meetResult ? '<br>Kết quả gặp: ' + d.meetResult : ''));
+      routeLayer.addLayer(m);
+    });
+
+    routeMap.fitBounds(L.latLngBounds(latlngs), { maxZoom: 16, padding: [40, 40], animate: false });
+
+    var distanceKm = 0;
+    for (var i = 1; i < latlngs.length; i++) distanceKm += haversineKm(latlngs[i - 1], latlngs[i]);
+    summary.textContent = points.length + ' điểm ghé · ~' + distanceKm.toFixed(1) + ' km · ' +
+      fmtTime(new Date(points[0].timestamp)) + ' – ' + fmtTime(new Date(points[points.length - 1].timestamp));
   }
 
   function initCharts() {
@@ -322,9 +446,12 @@
     document.getElementById('content').style.display = 'block';
     document.getElementById('lastUpdated').textContent = 'Tải lúc ' + new Date().toLocaleString('vi-VN') + ' · ' + data.length + ' lượt check-in';
     initMap();
+    initRouteMap();
     initCharts();
     fillFilterOptions();
+    fillRouteReplayOptions();
     render();
+    renderRouteReplay();
   }).catch(function (err) {
     document.getElementById('loadMsg').textContent = 'Không tải được dữ liệu: ' + err.message;
   });

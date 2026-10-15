@@ -32,6 +32,7 @@
   .section { border-radius:16px; padding:14px 14px 6px; margin-bottom:12px; border:1px solid transparent; }
   .section.tint-blue { background:#F3F8FF; border-color:#D9E9FF; }
   .section.tint-amber { background:#FFF9EE; border-color:#FBE7C6; }
+  .section.tint-green { background:#F1FBF5; border-color:#CBEFD9; }
   .section-label { font-size:11.5px; font-weight:700; text-transform:uppercase; letter-spacing:.3px; color:var(--muted); margin-bottom:9px; display:flex; align-items:center; gap:6px; }
 
   .field { margin-bottom:12px; display:flex; flex-direction:column; gap:6px; }
@@ -90,6 +91,16 @@
   <div class="card" id="sessionCard">
     <h2>🚩 Bắt đầu check-in</h2>
     <p class="muted">Chọn khu vực & tuyến đường làm việc — chỉ chọn 1 lần, sau đó check-in nhiều cửa hàng liên tiếp mà không cần chọn lại.</p>
+
+    <div class="field">
+      <label>Tên nhân viên</label>
+      <div class="chip-group" id="gSessStaff">
+        <div class="chip active" data-v="Nguyễn Bảo Toàn">Nguyễn Bảo Toàn</div>
+        <div class="chip" data-v="Trương Minh Hiếu">Trương Minh Hiếu</div>
+        <div class="chip" data-v="Nguyễn Lưu Hảo">Nguyễn Lưu Hảo</div>
+        <div class="chip" data-v="Bùi Quang Nhơn">Bùi Quang Nhơn</div>
+      </div>
+    </div>
 
     <div class="field">
       <label>Khu vực</label>
@@ -175,6 +186,28 @@
         </div>
       </div>
 
+      <div class="section tint-green">
+        <div class="section-label">🤝 Kết quả & liên hệ</div>
+        <div class="field">
+          <label>Kết quả gặp</label>
+          <div class="chip-group" id="gMeetResult">
+            <div class="chip active" data-v="Gặp chủ/quản lý">🙋 Gặp chủ/quản lý</div>
+            <div class="chip" data-v="Chỉ gặp nhân viên">🧑‍💼 Chỉ gặp nhân viên</div>
+            <div class="chip urgent" data-v="Đóng cửa/không gặp ai" data-cls="urgent">🚪 Đóng cửa/không gặp ai</div>
+          </div>
+        </div>
+        <div class="field">
+          <label>Mức độ quan tâm</label>
+          <div class="chip-group" id="gInterest">
+            <div class="chip active warn" data-v="Trung bình" data-cls="warn">🤔 Trung bình</div>
+            <div class="chip ok" data-v="Cao" data-cls="ok">🔥 Cao</div>
+            <div class="chip neutral" data-v="Không quan tâm" data-cls="neutral">❄️ Không quan tâm</div>
+          </div>
+        </div>
+        <div class="field"><label>Tên người liên hệ (không bắt buộc)</label><input id="fContactName" placeholder="VD: Chị Lan" autocomplete="off"></div>
+        <div class="field"><label>SĐT liên hệ (không bắt buộc)</label><input id="fContactPhone" type="tel" placeholder="VD: 0905xxxxxx" autocomplete="off"></div>
+      </div>
+
       <div class="field"><label>Ghi chú</label><textarea id="fNote" rows="2" placeholder="Tình hình tại điểm bán..."></textarea></div>
       <button type="submit" class="primary" id="btnSubmit">✓ Check-in ngay</button>
     </form>
@@ -213,6 +246,9 @@
 
   var getSoftware = wireChipGroup('gSoftware');
   var getTimeLeft = wireChipGroup('gTimeLeft');
+  var getMeetResult = wireChipGroup('gMeetResult');
+  var getInterest = wireChipGroup('gInterest');
+  var getSessStaff = wireChipGroup('gSessStaff');
   var getSessArea = wireChipGroup('gSessArea');
   var getSessDistrict = wireChipGroup('gSessDistrict');
 
@@ -321,6 +357,9 @@
 
   function showSessionCard(prefill) {
     if (prefill) {
+      Array.prototype.forEach.call(document.querySelectorAll('#gSessStaff .chip'), function (c) {
+        c.classList.toggle('active', c.getAttribute('data-v') === prefill.staff);
+      });
       Array.prototype.forEach.call(document.querySelectorAll('#gSessArea .chip'), function (c) {
         c.classList.toggle('active', c.getAttribute('data-v') === prefill.area);
       });
@@ -338,19 +377,20 @@
   function showFormCard() {
     var s = loadSession();
     document.getElementById('sessSummary').textContent =
-      '📍 ' + s.area + ' · ' + s.district + (s.route ? ' · ' + s.route : '');
+      '🧑‍💼 ' + s.staff + ' · 📍 ' + s.area + ' · ' + s.district + (s.route ? ' · ' + s.route : '');
     document.getElementById('sessionCard').classList.add('hidden');
     document.getElementById('successCard').classList.add('hidden');
     document.getElementById('formCard').classList.remove('hidden');
   }
 
   document.getElementById('btnStartSession').addEventListener('click', function () {
+    var staff = getSessStaff();
     var area = getSessArea();
     var district = getSessDistrict();
     var route = document.getElementById('fSessRoute').value.trim();
     if (!district) { alert('Chọn quận/huyện.'); return; }
     if (!route) { alert('Nhập tuyến đường.'); return; }
-    saveSession({ area: area, district: district, route: route });
+    saveSession({ staff: staff, area: area, district: district, route: route });
     saveRouteToHistory(district, route);
     showFormCard();
     initGps();
@@ -373,7 +413,7 @@
   // form.reset() chỉ áp dụng cho input/select/textarea gốc, không đụng tới chip —
   // tự đưa mỗi nhóm chip về lựa chọn đầu tiên khi bắt đầu check-in điểm khác.
   function resetChipGroups() {
-    ['gTypeGroup', 'gSoftware', 'gTimeLeft'].forEach(function (id) {
+    ['gTypeGroup', 'gSoftware', 'gTimeLeft', 'gMeetResult', 'gInterest'].forEach(function (id) {
       var chips = document.getElementById(id).querySelectorAll('.chip');
       Array.prototype.forEach.call(chips, function (c, i) { c.classList.toggle('active', i === 0); });
     });
@@ -481,9 +521,14 @@
     body.set('type', getType());
     body.set('software', software);
     body.set('timeLeft', getTimeLeft());
+    body.set('staff', session.staff);
     body.set('area', session.area);
     body.set('district', session.district);
     body.set('route', session.route);
+    body.set('meetResult', getMeetResult());
+    body.set('interest', getInterest());
+    body.set('contactName', document.getElementById('fContactName').value.trim());
+    body.set('contactPhone', document.getElementById('fContactPhone').value.trim());
     body.set('note', document.getElementById('fNote').value);
     body.set('lat', coords ? coords.lat : '');
     body.set('lng', coords ? coords.lng : '');

@@ -21,7 +21,15 @@ function doPost(e) {
       p.lat || '',
       p.lng || '',
       p.route || '',
-      p.district || ''
+      p.district || '',
+      p.meetResult || '',
+      p.interest || '',
+      p.contactName || '',
+      // Tiền tố "'" ép Sheets lưu dạng chữ (text) chứ không tự suy ra thành
+      // số rồi làm mất số 0 ở đầu (vd "0905123456" -> 905123456) — setNumberFormat('@')
+      // trên cột không đủ, appendRow() vẫn tự suy kiểu từ chuỗi số thuần.
+      p.contactPhone ? "'" + p.contactPhone : '',
+      p.staff || ''
     ]);
     return ContentService.createTextOutput(JSON.stringify({ ok: true }))
       .setMimeType(ContentService.MimeType.JSON);
@@ -34,9 +42,8 @@ function doPost(e) {
 function doGet(e) {
   var p = (e && e.parameter) || {};
   if (p.setup === '1') {
-    ensureRouteColumn();
-    ensureDistrictColumn();
-    return ContentService.createTextOutput(JSON.stringify({ ok: true, message: 'Đã kiểm tra/sửa cột Tuyến đường + Quận/Huyện.' }))
+    ensureColumns();
+    return ContentService.createTextOutput(JSON.stringify({ ok: true, message: 'Đã kiểm tra/sửa các cột J-P.' }))
       .setMimeType(ContentService.MimeType.JSON);
   }
   if (p.cleanTestRows === '1') {
@@ -64,22 +71,25 @@ function cleanTestRows_() {
   return removed;
 }
 
-/** Thêm cột "Tuyến đường" (J) vào sheet dữ liệu nếu chưa có — chạy 1 lần. */
-function ensureRouteColumn() {
+/** Thêm các cột J-P vào sheet dữ liệu nếu chưa có header đúng — chạy 1 lần. */
+function ensureColumns() {
   var sheet = SpreadsheetApp.openById(CHECKIN_SHEET_ID).getSheets()
     .filter(function (s) { return s.getName() !== 'Dashboard'; })[0];
-  if (sheet.getRange('J1').getValue() !== 'Tuyến đường') {
-    sheet.getRange('J1').setValue('Tuyến đường');
-  }
-  Logger.log('OK: cột J = ' + sheet.getRange('J1').getValue());
-}
-
-/** Thêm cột "Quận/Huyện" (K) vào sheet dữ liệu nếu chưa có — chạy 1 lần. */
-function ensureDistrictColumn() {
-  var sheet = SpreadsheetApp.openById(CHECKIN_SHEET_ID).getSheets()
-    .filter(function (s) { return s.getName() !== 'Dashboard'; })[0];
-  if (sheet.getRange('K1').getValue() !== 'Quận/Huyện') {
-    sheet.getRange('K1').setValue('Quận/Huyện');
-  }
-  Logger.log('OK: cột K = ' + sheet.getRange('K1').getValue());
+  var headers = {
+    J: 'Tuyến đường',
+    K: 'Quận/Huyện',
+    L: 'Kết quả gặp',
+    M: 'Mức độ quan tâm',
+    N: 'Tên người liên hệ',
+    O: 'SĐT liên hệ',
+    P: 'Tên nhân viên'
+  };
+  Object.keys(headers).forEach(function (col) {
+    var cell = sheet.getRange(col + '1');
+    if (cell.getValue() !== headers[col]) cell.setValue(headers[col]);
+  });
+  // Cột SĐT (O) phải là Plain Text — mặc định Sheets tự suy ra số từ chuỗi
+  // toàn chữ số và làm mất số 0 ở đầu (vd "0905123456" -> 905123456).
+  sheet.getRange('O:O').setNumberFormat('@');
+  Logger.log('OK: cột J-P đã kiểm tra.');
 }
