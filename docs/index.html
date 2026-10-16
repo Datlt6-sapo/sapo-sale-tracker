@@ -146,28 +146,16 @@
       <div class="section tint-blue">
         <div class="section-label">🏷️ Loại hình</div>
         <div class="field">
-          <label>Ngành nghề</label>
-          <div class="chip-group" id="gType">
-            <div class="chip active" data-v="Điện - Điện tử">📱 Điện - Điện tử</div>
-            <div class="chip" data-v="Đời sống - Sinh hoạt">🏠 Đời sống - Sinh hoạt</div>
-            <div class="chip" data-v="Giao thông - Vận tải">🏍️ Giao thông - Vận tải</div>
-            <div class="chip" data-v="Hoa & Quà tặng">💐 Hoa &amp; Quà tặng</div>
-            <div class="chip" data-v="Máy móc công nghiệp">⚙️ Máy móc công nghiệp</div>
-            <div class="chip" data-v="Mẹ và bé">🍼 Mẹ và bé</div>
-            <div class="chip" data-v="Nhà hàng - Ẩm thực">🍽️ Nhà hàng - Ẩm thực</div>
-            <div class="chip" data-v="Nhà thuốc">💊 Nhà thuốc</div>
-            <div class="chip" data-v="Nông - Lâm - Ngư nghiệp">🌾 Nông - Lâm - Ngư nghiệp</div>
-            <div class="chip" data-v="Sức khỏe, làm đẹp">💅 Sức khỏe, làm đẹp</div>
-            <div class="chip" data-v="Thể thao - Nghệ thuật - Giải trí">⚽ Thể thao - Nghệ thuật - Giải trí</div>
-            <div class="chip" data-v="Thiết bị văn phòng">🖨️ Thiết bị văn phòng</div>
-            <div class="chip" data-v="Thời trang - May mặc">👕 Thời trang - May mặc</div>
-            <div class="chip" data-v="Thông tin & Truyền thông">📢 Thông tin &amp; Truyền thông</div>
-            <div class="chip" data-v="Thủ công mỹ nghệ">🎨 Thủ công mỹ nghệ</div>
-            <div class="chip" data-v="Thực phẩm tiêu dùng (FMCG)">🛒 Thực phẩm tiêu dùng (FMCG)</div>
-            <div class="chip" data-v="Vật liệu xây dựng">🧱 Vật liệu xây dựng</div>
-            <div class="chip" data-v="Viễn thông">📶 Viễn thông</div>
+          <label>Nhóm ngành</label>
+          <div class="chip-group" id="gTypeGroup">
+            <div class="chip active" data-v="RT">🏬 RT</div>
+            <div class="chip" data-v="F&B">🍽️ F&amp;B</div>
             <div class="chip" data-v="Khác">✳️ Khác</div>
           </div>
+        </div>
+        <div class="field" id="fTypeSubField">
+          <label>Ngành nghề cụ thể</label>
+          <div class="chip-group" id="gType"></div>
         </div>
       </div>
 
@@ -323,9 +311,65 @@
   var getSessArea = wireChipGroup('gSessArea');
   var getSessDistrict = wireChipGroup('gSessDistrict');
 
-  // Ngành nghề theo danh sách 19 ngành chính thức của Sapo (Phạm Văn Thắng) —
-  // "Khác" luôn xếp cuối, dùng khi không khớp ngành nào ở trên.
-  var getType = wireChipGroup('gType');
+  // Ngành nghề chọn 2 bước: nhóm (RT/F&B/Khác) trước, rồi mới tới ngành cụ
+  // thể trong nhóm đó — giống kiểu Khu vực → Quận/Huyện. Danh sách RT theo
+  // đúng 19 ngành chính thức của Sapo (Phạm Văn Thắng), "Khác" xếp cuối theo
+  // ghi chú của bảng gốc. Danh sách F&B tạm thời, sẽ bổ sung bảng chính thức
+  // sau.
+  var TYPES_BY_GROUP = {
+    'RT': [
+      { v: 'Điện - Điện tử', label: '📱 Điện - Điện tử' },
+      { v: 'Đời sống - Sinh hoạt', label: '🏠 Đời sống - Sinh hoạt' },
+      { v: 'Giao thông - Vận tải', label: '🏍️ Giao thông - Vận tải' },
+      { v: 'Hoa & Quà tặng', label: '💐 Hoa & Quà tặng' },
+      { v: 'Máy móc công nghiệp', label: '⚙️ Máy móc công nghiệp' },
+      { v: 'Mẹ và bé', label: '🍼 Mẹ và bé' },
+      { v: 'Nhà hàng - Ẩm thực', label: '🍽️ Nhà hàng - Ẩm thực' },
+      { v: 'Nhà thuốc', label: '💊 Nhà thuốc' },
+      { v: 'Nông - Lâm - Ngư nghiệp', label: '🌾 Nông - Lâm - Ngư nghiệp' },
+      { v: 'Sức khỏe, làm đẹp', label: '💅 Sức khỏe, làm đẹp' },
+      { v: 'Thể thao - Nghệ thuật - Giải trí', label: '⚽ Thể thao - Nghệ thuật - Giải trí' },
+      { v: 'Thiết bị văn phòng', label: '🖨️ Thiết bị văn phòng' },
+      { v: 'Thời trang - May mặc', label: '👕 Thời trang - May mặc' },
+      { v: 'Thông tin & Truyền thông', label: '📢 Thông tin & Truyền thông' },
+      { v: 'Thủ công mỹ nghệ', label: '🎨 Thủ công mỹ nghệ' },
+      { v: 'Thực phẩm tiêu dùng (FMCG)', label: '🛒 Thực phẩm tiêu dùng (FMCG)' },
+      { v: 'Vật liệu xây dựng', label: '🧱 Vật liệu xây dựng' },
+      { v: 'Viễn thông', label: '📶 Viễn thông' }
+    ],
+    'F&B': [
+      { v: 'Quán ăn/Cà phê', label: '☕ Quán ăn/Cà phê' },
+      { v: 'Quán trà sữa', label: '🧋 Quán trà sữa' }
+    ]
+  };
+  var getTypeGroup = wireChipGroup('gTypeGroup');
+  var getTypeSub = wireChipGroup('gType');
+
+  function renderTypeChips(group, selected) {
+    var list = TYPES_BY_GROUP[group] || [];
+    var subField = document.getElementById('fTypeSubField');
+    if (!list.length) {
+      // Nhóm "Khác" không có ngành con — ẩn luôn bước 2.
+      subField.classList.add('hidden');
+      document.getElementById('gType').innerHTML = '';
+      return;
+    }
+    subField.classList.remove('hidden');
+    document.getElementById('gType').innerHTML = list.map(function (t, i) {
+      var active = selected ? t.v === selected : i === 0;
+      return '<div class="chip' + (active ? ' active' : '') + '" data-v="' + t.v.replace(/"/g, '&quot;') + '">' + t.label + '</div>';
+    }).join('');
+  }
+
+  function getType() {
+    var group = getTypeGroup();
+    return group === 'Khác' ? 'Khác' : (getTypeSub() || '');
+  }
+
+  document.getElementById('gTypeGroup').addEventListener('click', function () {
+    renderTypeChips(getTypeGroup());
+  });
+  renderTypeChips(getTypeGroup());
 
   // ----- Đăng nhập: email Sapo -> tên nhân viên -----
   // Chỉ kiểm tra email có khớp danh sách nội bộ hay không, không phải OAuth
@@ -491,10 +535,11 @@
   // form.reset() chỉ áp dụng cho input/select/textarea gốc, không đụng tới chip —
   // tự đưa mỗi nhóm chip về lựa chọn đầu tiên khi bắt đầu check-in điểm khác.
   function resetChipGroups() {
-    ['gType', 'gSoftware', 'gTimeLeft', 'gMeetResult', 'gInterest'].forEach(function (id) {
+    ['gTypeGroup', 'gSoftware', 'gTimeLeft', 'gMeetResult', 'gInterest'].forEach(function (id) {
       var chips = document.getElementById(id).querySelectorAll('.chip');
       Array.prototype.forEach.call(chips, function (c, i) { c.classList.toggle('active', i === 0); });
     });
+    renderTypeChips(getTypeGroup());
     softwareOtherField.classList.add('hidden');
     softwareOtherInput.value = '';
   }
