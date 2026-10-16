@@ -32,6 +32,12 @@
   .legend span { display:inline-flex; align-items:center; gap:6px; }
   .legend i { width:9px; height:9px; border-radius:50%; display:inline-block; }
   #loadMsg { text-align:center; padding:40px 0; color:var(--muted); }
+  .followup-row { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:10px 0; border-bottom:1px solid var(--border); }
+  .followup-row:last-child { border-bottom:none; }
+  .followup-row .shop { font-weight:700; font-size:13.5px; }
+  .followup-row .meta { font-size:12px; color:var(--muted); margin-top:2px; }
+  .followup-row .days { flex-shrink:0; font-size:12px; font-weight:700; padding:4px 10px; border-radius:999px; background:#FFF0ED; color:var(--red); white-space:nowrap; }
+  .followup-empty { color:var(--muted); font-size:13px; padding:8px 0; }
 </style>
 </head>
 <body>
@@ -44,6 +50,7 @@
 
   <div id="content" style="display:none">
     <div class="toolbar">
+      <select id="fStaff"><option value="">Tất cả nhân viên</option></select>
       <select id="fArea"><option value="">Tất cả khu vực</option></select>
       <select id="fDistrict"><option value="">Tất cả quận/huyện</option></select>
       <select id="fType"><option value="">Tất cả ngành nghề</option></select>
@@ -56,6 +63,11 @@
       <div class="kpi"><div class="label">Tổng lượt check-in</div><div class="value" id="kpiTotal">0</div></div>
       <div class="kpi"><div class="label">Số cửa hàng riêng biệt</div><div class="value" id="kpiUnique">0</div></div>
       <div class="kpi"><div class="label">Khu vực đang có dữ liệu</div><div class="value" id="kpiAreas">0</div></div>
+    </div>
+
+    <div class="card">
+      <h2>🔔 Cần follow-up (quan tâm cao, chưa quay lại)</h2>
+      <div id="followUpList"></div>
     </div>
 
     <div class="card">
@@ -149,11 +161,15 @@
   }
 
   function fillFilterOptions() {
+    var staffSel = document.getElementById('fStaff');
     var areaSel = document.getElementById('fArea');
     var districtSel = document.getElementById('fDistrict');
     var typeSel = document.getElementById('fType');
     var softSel = document.getElementById('fSoftware');
     var interestSel = document.getElementById('fInterest');
+    uniqueSorted(ALL.map(function (d) { return d.staff; })).forEach(function (v) {
+      staffSel.appendChild(new Option(v, v));
+    });
     uniqueSorted(ALL.map(function (d) { return d.area; })).forEach(function (v) {
       areaSel.appendChild(new Option(v, v));
     });
@@ -169,7 +185,7 @@
     uniqueSorted(ALL.map(function (d) { return d.interest; })).forEach(function (v) {
       interestSel.appendChild(new Option(v, v));
     });
-    [areaSel, districtSel, typeSel, softSel, interestSel].forEach(function (el) {
+    [staffSel, areaSel, districtSel, typeSel, softSel, interestSel].forEach(function (el) {
       el.addEventListener('change', render);
     });
     document.getElementById('fRoute').addEventListener('input', render);
@@ -177,6 +193,7 @@
 
   function currentFilter() {
     return {
+      staff: document.getElementById('fStaff').value,
       area: document.getElementById('fArea').value,
       district: document.getElementById('fDistrict').value,
       type: document.getElementById('fType').value,
@@ -188,7 +205,8 @@
 
   function applyFilter(data, f) {
     return data.filter(function (d) {
-      return (!f.area || d.area === f.area) &&
+      return (!f.staff || d.staff === f.staff) &&
+        (!f.area || d.area === f.area) &&
         (!f.district || d.district === f.district) &&
         (!f.interest || d.interest === f.interest) &&
         (!f.type || d.type === f.type) &&
@@ -206,6 +224,45 @@
     return map;
   }
 
+  function escapeHtml(s) {
+    return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  }
+
+  // "Cần follow-up": lấy lượt check-in GẦN NHẤT của mỗi cửa hàng (tên trùng,
+  // không phân biệt hoa/thường) trong dữ liệu đang lọc — nếu lượt gần nhất
+  // đó vẫn đánh giá "Quan tâm cao" thì coi là chưa quay lại/chưa chốt, cần
+  // ưu tiên ghé lại. Quay lại và đổi đánh giá (hoặc chốt) thì tự rớt khỏi
+  // danh sách, không cần đánh dấu "đã xử lý" thủ công.
+  function renderFollowUps(data) {
+    var container = document.getElementById('followUpList');
+    var latestByShop = {};
+    data.forEach(function (d) {
+      var key = (d.shop || '').trim().toLowerCase();
+      if (!key) return;
+      var dt = new Date(d.timestamp);
+      if (!latestByShop[key] || dt > latestByShop[key]._dt) {
+        d._dt = dt;
+        latestByShop[key] = d;
+      }
+    });
+    var items = Object.keys(latestByShop).map(function (k) { return latestByShop[k]; })
+      .filter(function (d) { return d.interest === 'Cao'; })
+      .sort(function (a, b) { return a._dt - b._dt; });
+
+    if (!items.length) {
+      container.innerHTML = '<div class="followup-empty">Không có điểm nào đang chờ follow-up.</div>';
+      return;
+    }
+
+    var now = new Date();
+    container.innerHTML = items.map(function (d) {
+      var days = Math.max(0, Math.floor((now - d._dt) / 86400000));
+      var meta = [d.area, d.district, d.route].filter(Boolean).join(' · ') + (d.staff ? ' · ' + d.staff : '');
+      return '<div class="followup-row"><div><div class="shop">' + escapeHtml(d.shop || '') + '</div><div class="meta">' + escapeHtml(meta) + '</div></div>' +
+        '<div class="days">' + days + ' ngày trước</div></div>';
+    }).join('');
+  }
+
   function render() {
     var f = currentFilter();
     var data = applyFilter(ALL, f);
@@ -213,6 +270,8 @@
     document.getElementById('kpiTotal').textContent = data.length;
     document.getElementById('kpiUnique').textContent = uniqueSorted(data.map(function (d) { return d.shop; })).length;
     document.getElementById('kpiAreas').textContent = uniqueSorted(data.map(function (d) { return d.area; })).length;
+
+    renderFollowUps(data);
 
     // Bản đồ
     map.invalidateSize();

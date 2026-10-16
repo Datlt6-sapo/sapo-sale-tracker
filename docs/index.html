@@ -137,7 +137,11 @@
     <h2>📍 Check-in điểm bán</h2>
     <p id="gpsStatus" class="muted"><span class="gps-dot" id="gpsDot"></span><span id="gpsText">Đang lấy vị trí…</span><button type="button" id="btnRetryGps" class="hidden">Thử lại</button></p>
     <form id="ciForm">
-      <div class="field"><label>Tên cửa hàng</label><input id="fShop" required placeholder="VD: Tạp hoá Cô Lan" autocomplete="off"></div>
+      <div class="field">
+        <label>Tên cửa hàng</label>
+        <input id="fShop" required placeholder="VD: Tạp hoá Cô Lan" autocomplete="off">
+        <p class="muted hidden" id="dupWarning" style="color:var(--amber);font-weight:600"></p>
+      </div>
 
       <div class="section tint-blue">
         <div class="section-label">🏷️ Loại hình</div>
@@ -227,6 +231,60 @@
   // Google Sheet). Không còn dùng Google Form nữa vì Form bị chính sách công ty
   // chặn không cho người ngoài gửi dữ liệu ẩn danh.
   var API_URL = 'https://script.google.com/macros/s/AKfycbz9b1hdToFKIW2LVts2u4Z8NiNCL1Ri4V7DpoIvVyJ-GvIVHBqmzpvp_oK8QXUYHfiQ8g/exec';
+
+  // ----- Cảnh báo trùng cửa hàng -----
+  // Tải nhẹ dữ liệu check-in đã có (cùng CSV công khai mà dashboard dùng) để
+  // cảnh báo nếu tên cửa hàng vừa gõ trùng với 1 điểm đã check-in trước đó
+  // trong cùng quận/huyện — không chặn submit, chỉ nhắc tránh ghé lặp. Tải
+  // nền, lỗi/chậm thì bỏ qua lặng lẽ, không ảnh hưởng luồng check-in chính.
+  var CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vRnAsPBmsqNTt1enos9-3SP4TU-FmjoKNSwV-yQl3GdHcY2uAOJXNtR88aydnTs5N7PUkRQ3k8Quj3w/pub?gid=1705857730&single=true&output=csv';
+  var existingByDistrict = {};
+
+  function parseCsvSimple(text) {
+    var rows = []; var row = []; var field = ''; var inQuotes = false;
+    for (var i = 0; i < text.length; i++) {
+      var c = text[i];
+      if (inQuotes) {
+        if (c === '"') { if (text[i + 1] === '"') { field += '"'; i++; } else { inQuotes = false; } }
+        else { field += c; }
+      } else {
+        if (c === '"') inQuotes = true;
+        else if (c === ',') { row.push(field); field = ''; }
+        else if (c === '\n') { row.push(field); rows.push(row); row = []; field = ''; }
+        else if (c === '\r') { /* skip */ }
+        else { field += c; }
+      }
+    }
+    if (field.length || row.length) { row.push(field); rows.push(row); }
+    return rows;
+  }
+
+  function loadExistingShops() {
+    fetch(CSV_URL).then(function (res) { return res.text(); }).then(function (text) {
+      var rows = parseCsvSimple(text).filter(function (r) { return r.length > 1 && r[0] !== ''; });
+      rows.shift();
+      rows.forEach(function (r) {
+        var shop = (r[1] || '').trim();
+        var district = r[10] || '';
+        if (!shop || !district) return;
+        var key = district + '|' + shop.toLowerCase();
+        existingByDistrict[key] = { timestamp: r[0], staff: r[15] || '' };
+      });
+    }).catch(function () { /* không chặn check-in nếu tải lỗi */ });
+  }
+  loadExistingShops();
+
+  function checkDuplicateShop() {
+    var warn = document.getElementById('dupWarning');
+    var session = loadSession();
+    var shop = document.getElementById('fShop').value.trim();
+    if (!session || !shop) { warn.classList.add('hidden'); return; }
+    var hit = existingByDistrict[session.district + '|' + shop.toLowerCase()];
+    if (!hit) { warn.classList.add('hidden'); return; }
+    warn.textContent = '⚠️ Đã check-in trước đó' + (hit.staff ? ' bởi ' + hit.staff : '') + (hit.timestamp ? ' (' + hit.timestamp + ')' : '') + ' — vẫn check-in nếu đúng là ghé lại.';
+    warn.classList.remove('hidden');
+  }
+  document.getElementById('fShop').addEventListener('input', checkDuplicateShop);
 
   // Nhóm nút chọn nhanh (chip) — 1 chạm chọn, không cần mở dropdown. Trả về hàm
   // get() để đọc giá trị đang chọn lúc submit. Luôn truy vấn lại .chip trong
@@ -594,6 +652,9 @@
       .then(function (res) { return res.json(); })
       .then(function (data) {
         if (!data.ok) throw new Error(data.error || 'Lỗi không rõ');
+        // Thêm ngay vào danh sách để cảnh báo trùng nhận ra luôn, không phải
+        // đợi CSV công khai cập nhật (có độ trễ vài chục giây tới vài phút).
+        existingByDistrict[session.district + '|' + shop.toLowerCase()] = { timestamp: '', staff: identity.name };
         document.getElementById('formCard').classList.add('hidden');
         document.getElementById('successCard').classList.remove('hidden');
       })
@@ -609,6 +670,7 @@
   document.getElementById('btnAgain').addEventListener('click', function () {
     document.getElementById('ciForm').reset();
     document.getElementById('fNote').value = '';
+    document.getElementById('dupWarning').classList.add('hidden');
     resetChipGroups();
     document.getElementById('successCard').classList.add('hidden');
     document.getElementById('formCard').classList.remove('hidden');
